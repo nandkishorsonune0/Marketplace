@@ -7,7 +7,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
-import ProductDetail from './pages/Products/Detail';
+import ProductDetail from './pages/Products/ProductDetails';
+import EditProduct from './pages/Products/EditProduct';
 import Categories from './pages/Categories';
 import CategoryDetail from './pages/Categories/Detail';
 import Orders from './pages/Orders';
@@ -47,6 +48,9 @@ function App() {
         {/* Products */}
         <Route path="products" element={<Products />} />
         <Route path="products/:id" element={<ProductDetail />} />
+        <Route path="products/:id/edit" element={
+          user?.role === 'admin' || user?.role === 'seller' ? <EditProduct /> : <Navigate to="/products" replace />
+        } />
 
         {/* Categories */}
         <Route path="categories" element={<Categories />} />

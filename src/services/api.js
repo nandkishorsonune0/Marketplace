@@ -217,54 +217,164 @@ export const authAPI = {
 
 // Categories API
 export const categoriesAPI = {
-    getCategories: (params) => api.get('/categories', { params }),
-    getCategoryById: (id) => api.get(`/categories/${id}`),
-    createCategory: (categoryData) => api.post('/categories', categoryData),
-    updateCategory: (id, categoryData) => api.put(`/categories/${id}`, categoryData),
-    deleteCategory: (id) => api.delete(`/categories/${id}`),
-    getSubcategories: (id) => api.get(`/categories/${id}/subcategories`),
-    getCategoryProducts: (id, params) => api.get(`/categories/${id}/products`, { params })
+    getCategories: async (params) => {
+        try {
+            console.log('API Request - getCategories:', { params });
+            const response = await api.get('/categories', { params });
+            console.log('API Response:', response);
+            // Return the data directly since axios already extracts it
+            return response.data;
+        } catch (error) {
+            console.error('Get categories error:', error);
+            throw error;
+        }
+    },
+
+    getCategoryById: async (id) => {
+        try {
+            const response = await api.get(`/categories/${id}`);
+            return response.data;
+        } catch (error) {
+            console.error('Get category error:', error);
+            throw error;
+        }
+    },
+
+    createCategory: async (categoryData) => {
+        try {
+            const response = await api.post('/categories', categoryData);
+            return response.data;
+        } catch (error) {
+            console.error('Create category error:', error);
+            throw error;
+        }
+    },
+
+    updateCategory: async (id, categoryData) => {
+        try {
+            const response = await api.put(`/categories/${id}`, categoryData);
+            return response.data;
+        } catch (error) {
+            console.error('Update category error:', error);
+            throw error;
+        }
+    },
+
+    deleteCategory: async (id) => {
+        try {
+            const response = await api.delete(`/categories/${id}`);
+            return response.data;
+        } catch (error) {
+            console.error('Delete category error:', error);
+            throw error;
+        }
+    },
+
+    getSubcategories: async (id) => {
+        try {
+            const response = await api.get(`/categories/${id}/subcategories`);
+            return response.data;
+        } catch (error) {
+            console.error('Get subcategories error:', error);
+            throw error;
+        }
+    },
+
+    getCategoryProducts: async (id, params) => {
+        try {
+            const response = await api.get(`/categories/${id}/products`, { params });
+            return response.data;
+        } catch (error) {
+            console.error('Get category products error:', error);
+            throw error;
+        }
+    }
 };
 
 // Products API
 export const productsAPI = {
-    getProducts: (params) => api.get('/products', { params }),
-    getProductById: (id) => api.get(`/products/${id}`),
-    createProduct: async (productData) => {
+    getProducts: async (params) => {
         try {
-            // Ensure all required fields are present
-            if (!productData.name || !productData.price || !productData.category || !productData.seller) {
-                throw new Error('Missing required fields');
-            }
-
-            // Format the data
-            const formattedData = {
-                name: productData.name,
-                description: productData.description || '',
-                price: Number(productData.price),
-                category: productData.category,
-                stock: Number(productData.stock || 0),
-                seller: productData.seller
-            };
-
-            console.log('Creating product with data:', formattedData);
-            const response = await api.post('/products', formattedData);
-            console.log('Product creation response:', response.data);
-            return response;
+            const response = await api.get('/products', { params });
+            return response.data;
         } catch (error) {
-            console.error('Product creation error:', error);
+            console.error('Get products error:', error);
             throw error;
         }
     },
-    updateProduct: (id, productData) => api.put(`/products/${id}`, productData),
-    deleteProduct: (id) => api.delete(`/products/${id}`),
-    getProductsByCategory: (categoryId, params) => api.get(`/products/category/${categoryId}`, { params }),
-    searchProducts: (query, params) => api.get('/products/search', { params: { ...params, query } }),
-    getFeaturedProducts: () => api.get('/products/featured'),
-    getNewArrivals: () => api.get('/products/new-arrivals'),
-    getBestSellers: () => api.get('/products/best-sellers'),
-    addProductReview: (id, reviewData) => api.post(`/products/${id}/reviews`, reviewData),
-    getProductReviews: (id) => api.get(`/products/${id}/reviews`)
+
+    getProductById: async (id) => {
+        try {
+            const response = await api.get(`/products/${id}`);
+            return response.data;
+        } catch (error) {
+            console.error('Get product error:', error);
+            throw error;
+        }
+    },
+
+    createProduct: async (productData) => {
+        try {
+            console.log('Creating product:', productData);
+            const response = await api.post('/products', productData);
+            console.log('Product created:', response.data);
+            return response.data;
+        } catch (error) {
+            console.error('Create product error:', error);
+            throw error;
+        }
+    },
+
+    updateProduct: async (id, productData) => {
+        try {
+            console.log('Updating product:', { id, productData });
+            const response = await api.put(`/products/${id}`, productData);
+            console.log('Product updated:', response.data);
+            return response.data;
+        } catch (error) {
+            console.error('Update product error:', error);
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to update product';
+            throw new Error(errorMessage);
+        }
+    },
+
+    deleteProduct: async (id) => {
+        try {
+            const response = await api.delete(`/products/${id}`);
+            return response.data;
+        } catch (error) {
+            console.error('Delete product error:', error);
+            throw error;
+        }
+    },
+
+    getProductsByCategory: async (categoryId, params) => {
+        return await api.get(`/products/category/${categoryId}`, { params });
+    },
+
+    searchProducts: async (query, params) => {
+        return await api.get('/products/search', { params: { ...params, query } });
+    },
+
+    getFeaturedProducts: async () => {
+        return await api.get('/products/featured');
+    },
+
+    getNewArrivals: async () => {
+        return await api.get('/products/new-arrivals');
+    },
+
+    getBestSellers: async () => {
+        return await api.get('/products/best-sellers');
+    },
+
+    addProductReview: async (id, reviewData) => {
+        return await api.post(`/products/${id}/reviews`, reviewData);
+    },
+
+    getProductReviews: async (id) => {
+        return await api.get(`/products/${id}/reviews`);
+    }
 };
 
 // Orders API

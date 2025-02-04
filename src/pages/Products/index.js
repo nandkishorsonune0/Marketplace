@@ -48,9 +48,6 @@ const Products = () => {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const location = useLocation();
-    const { items: products, loading, error, pagination } = useSelector(state => state.products);
-    const { items: categories } = useSelector(state => state.categories);
-    const user = useSelector(selectUser);
     const [openDialog, setOpenDialog] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [formData, setFormData] = useState({
@@ -58,11 +55,12 @@ const Products = () => {
         description: '',
         price: '',
         category: '',
-        stock: ''
+        stock: '0'
     });
+
     const [searchQuery, setSearchQuery] = useState('');
     const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [rowsPerPage, setRowsPerPage] = useState(5);
     const [filters, setFilters] = useState({
         category: '',
         minPrice: '',
@@ -70,34 +68,48 @@ const Products = () => {
         inStock: ''
     });
 
+    // Get products and categories from Redux store
+    const { items: products, loading, error } = useSelector((state) => state.products);
+    const { items: categories = [] } = useSelector((state) => state.categories) || { items: [] };
+    const user = useSelector(selectUser);
+
+    useEffect(() => {
+        // Load categories immediately when component mounts
+        dispatch(fetchCategories());
+    }, [dispatch]);
+
     useEffect(() => {
         if (location.pathname === '/products') {
             loadProducts();
-            dispatch(fetchCategories());
         }
     }, [dispatch, location.pathname, page, rowsPerPage, searchQuery, filters]);
 
-    const loadProducts = () => {
-        dispatch(fetchProducts({
-            page: page + 1,
-            limit: rowsPerPage,
-            search: searchQuery,
-            category: filters.category,
-            minPrice: filters.minPrice,
-            maxPrice: filters.maxPrice,
-            inStock: filters.inStock
-        }));
+    const loadProducts = async () => {
+        try {
+            await dispatch(fetchProducts({
+                page: page + 1,
+                limit: rowsPerPage,
+                search: searchQuery,
+                category: filters.category,
+                minPrice: filters.minPrice,
+                maxPrice: filters.maxPrice,
+                inStock: filters.inStock
+            })).unwrap();
+        } catch (error) {
+            console.error('Error loading products:', error);
+        }
     };
 
     const handleOpenDialog = (product = null) => {
         if (product) {
+            console.log('Opening edit dialog with product:', product);
             setSelectedProduct(product);
             setFormData({
-                name: product.name,
-                description: product.description,
-                price: product.price,
+                name: product.name || '',
+                description: product.description || '',
+                price: product.price || '',
                 category: product.category?._id || '',
-                stock: product.stock
+                stock: product.stock || '0'
             });
         } else {
             setSelectedProduct(null);
@@ -106,7 +118,7 @@ const Products = () => {
                 description: '',
                 price: '',
                 category: '',
-                stock: ''
+                stock: '0'
             });
         }
         setOpenDialog(true);
@@ -120,7 +132,7 @@ const Products = () => {
             description: '',
             price: '',
             category: '',
-            stock: ''
+            stock: '0'
         });
     };
 
@@ -141,19 +153,28 @@ const Products = () => {
             return;
         }
 
+        // Build product data with required fields
         const productData = {
             name: formData.name.trim(),
             description: formData.description.trim(),
             price: parseFloat(formData.price),
             category: formData.category,
-            stock: parseInt(formData.stock) || 0
+            stock: parseInt(formData.stock || '0')
         };
+
+        console.log('Submitting product data:', productData);
 
         try {
             if (selectedProduct) {
-                await dispatch(updateProduct({ id: selectedProduct._id, productData })).unwrap();
+                console.log('Updating product:', selectedProduct._id, productData);
+                await dispatch(updateProduct({ 
+                    id: selectedProduct._id, 
+                    productData 
+                })).unwrap();
+                console.log('Product updated successfully');
             } else {
                 await dispatch(createProduct(productData)).unwrap();
+                console.log('Product created successfully');
             }
             handleCloseDialog();
             loadProducts();
@@ -240,7 +261,7 @@ const Products = () => {
                                 label="Category"
                             >
                                 <MenuItem value="">All Categories</MenuItem>
-                                {categories.map((category) => (
+                                {(categories || []).map((category) => (
                                     <MenuItem key={category._id} value={category._id}>
                                         {category.name}
                                     </MenuItem>
@@ -348,7 +369,7 @@ const Products = () => {
                     <TablePagination
                         rowsPerPageOptions={[5, 10, 25]}
                         component="div"
-                        count={pagination.total || 0}
+                        count={products.length}
                         rowsPerPage={rowsPerPage}
                         page={page}
                         onPageChange={handleChangePage}
@@ -367,12 +388,12 @@ const Products = () => {
                             <Grid container spacing={2}>
                                 <Grid item xs={12}>
                                     <TextField
+                                        required
                                         fullWidth
                                         label="Name"
                                         name="name"
                                         value={formData.name}
                                         onChange={handleInputChange}
-                                        required
                                     />
                                 </Grid>
                                 <Grid item xs={12}>
@@ -384,18 +405,17 @@ const Products = () => {
                                         onChange={handleInputChange}
                                         multiline
                                         rows={4}
-                                        required
                                     />
                                 </Grid>
                                 <Grid item xs={12} sm={6}>
                                     <TextField
+                                        required
                                         fullWidth
                                         label="Price"
                                         name="price"
                                         type="number"
                                         value={formData.price}
                                         onChange={handleInputChange}
-                                        required
                                     />
                                 </Grid>
                                 <Grid item xs={12} sm={6}>
@@ -406,7 +426,6 @@ const Products = () => {
                                         type="number"
                                         value={formData.stock}
                                         onChange={handleInputChange}
-                                        required
                                     />
                                 </Grid>
                                 <Grid item xs={12}>
@@ -418,7 +437,8 @@ const Products = () => {
                                             onChange={handleInputChange}
                                             label="Category"
                                         >
-                                            {categories.map((category) => (
+                                            <MenuItem value="">Select Category</MenuItem>
+                                            {categories && categories.length > 0 && categories.map((category) => (
                                                 <MenuItem key={category._id} value={category._id}>
                                                     {category.name}
                                                 </MenuItem>
@@ -432,7 +452,7 @@ const Products = () => {
                     <DialogActions>
                         <Button onClick={handleCloseDialog}>Cancel</Button>
                         <Button type="submit" variant="contained">
-                            {selectedProduct ? 'Update' : 'Create'}
+                            {selectedProduct ? 'Update' : 'Add'}
                         </Button>
                     </DialogActions>
                 </form>
