@@ -20,6 +20,21 @@ const productSchema = new mongoose.Schema({
         ref: 'Category',
         required: true
     },
+    sku: {
+        type: String,
+        unique: true,
+        sparse: true // This allows multiple documents to have no SKU while enforcing uniqueness for those that do
+    },
+    status: {
+        type: String,
+        enum: ['active', 'inactive'],
+        default: 'active'
+    },
+    visibility: {
+        type: String,
+        enum: ['public', 'private'],
+        default: 'public'
+    },
     stock: {
         type: Number,
         default: 0
@@ -36,5 +51,8 @@ const productSchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
+
+// Create indexes
+productSchema.index({ sku: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Product', productSchema);

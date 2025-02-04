@@ -4,6 +4,33 @@ const { ApiError } = require('../utils/ApiError');
 const { ApiResponse } = require('../utils/ApiResponse');
 const asyncHandler = require('../middleware/asyncHandler');
 
+// Function to generate unique SKU
+const generateUniqueSku = async (productName) => {
+    const maxAttempts = 10;
+    let attempt = 0;
+    
+    while (attempt < maxAttempts) {
+        try {
+            const timestamp = Date.now().toString().slice(-6);
+            const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+            const namePrefix = (productName || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+            const sku = `${namePrefix}${randomNum}${timestamp}`;
+            
+            // Check if SKU exists
+            const existingSku = await Product.findOne({ sku });
+            if (!existingSku) {
+                return sku;
+            }
+        } catch (error) {
+            console.error('Error generating SKU:', error);
+        }
+        
+        attempt++;
+    }
+    
+    throw new ApiError(500, 'Failed to generate unique SKU after multiple attempts');
+};
+
 // Get all products with pagination and filters
 exports.getProducts = asyncHandler(async (req, res) => {
     const page = parseInt(req.query.page) || 1;
@@ -80,46 +107,82 @@ exports.getProductById = asyncHandler(async (req, res) => {
 // Create product
 exports.createProduct = asyncHandler(async (req, res) => {
     try {
-        console.log('Request body:', req.body); // Debug log
-        const { name, description, price, category, stock } = req.body;
+        const productData = req.body;
+        console.log('Creating product with data:', productData);
 
-        // Validate fields
-        if (!name || !description || !price || !category) {
+        // Ensure required fields
+        if (!productData.name || !productData.description || !productData.price || !productData.category) {
             throw new ApiError(400, 'Missing required fields');
         }
 
-        // Validate price is a number
-        const numericPrice = Number(price);
-        if (isNaN(numericPrice)) {
-            throw new ApiError(400, 'Price must be a valid number');
+        // Ensure seller is provided
+        if (!productData.seller) {
+            throw new ApiError(400, 'Seller information is required');
         }
 
-        // Validate category exists
-        const categoryExists = await Category.findById(category);
-        if (!categoryExists) {
-            throw new ApiError(400, 'Invalid category ID');
+        // Generate unique SKU if not provided
+        if (!productData.sku) {
+            try {
+                productData.sku = await generateUniqueSku(productData.name);
+                console.log('Generated SKU:', productData.sku);
+            } catch (error) {
+                console.error('Error generating SKU:', error);
+                throw new ApiError(500, 'Failed to generate SKU');
+            }
+        } else {
+            // Check if provided SKU already exists
+            const existingSku = await Product.findOne({ sku: productData.sku });
+            if (existingSku) {
+                throw new ApiError(400, 'Product with this SKU already exists');
+            }
         }
 
-        // Create product
+        // Create the product
         const product = await Product.create({
-            name,
-            description,
-            price: numericPrice,
-            category,
-            stock: stock || 0,
-            seller: req.user._id
+            ...productData,
+            price: parseFloat(productData.price),
+            status: productData.status || 'active',
+            visibility: productData.visibility || 'public'
         });
 
-        console.log('Product created:', product); // Debug log
+        // Populate seller information
+        await product.populate('seller', 'name email');
+        await product.populate('category', 'name');
 
-        const populatedProduct = await Product.findById(product._id)
-            .populate('category', 'name')
-            .populate('seller', 'name email')
-            .lean();
+        console.log('Created product:', product);
 
-        res.status(201).json(new ApiResponse(201, populatedProduct, "Product created successfully"));
+        // Transform the response
+        const transformedProduct = {
+            _id: product._id.toString(),
+            name: product.name,
+            description: product.description,
+            price: product.price,
+            sku: product.sku,
+            category: {
+                _id: product.category._id,
+                name: product.category.name
+            },
+            status: product.status,
+            visibility: product.visibility,
+            seller: {
+                _id: product.seller._id,
+                name: product.seller.name,
+                email: product.seller.email
+            },
+            createdAt: product.createdAt,
+            updatedAt: product.updatedAt
+        };
+
+        res.status(201).json({
+            success: true,
+            data: transformedProduct,
+            message: 'Product created successfully'
+        });
     } catch (error) {
-        console.error('Product creation error:', error); // Debug log
+        console.error('Error creating product:', error);
+        if (error.code === 11000) {
+            throw new ApiError(400, 'Product with this SKU already exists');
+        }
         throw error;
     }
 });
