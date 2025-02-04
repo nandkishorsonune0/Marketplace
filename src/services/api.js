@@ -315,12 +315,12 @@ export const productsAPI = {
 
     createProduct: async (productData) => {
         try {
-            console.log('Creating product:', productData);
+            console.log('API Request - createProduct:', productData);
             const response = await api.post('/products', productData);
-            console.log('Product created:', response.data);
+            console.log('API Response - createProduct:', response.data);
             return response.data;
         } catch (error) {
-            console.error('Create product error:', error);
+            console.error('Create product error:', error.response?.data || error);
             throw error;
         }
     },

@@ -1,9 +1,9 @@
 // EditProduct.js
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useSelector, useDispatch } from 'react-redux';
-import { updateProduct, fetchProducts } from '../../features/products/productSlice';
+import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate, useParams } from 'react-router-dom';
 import { fetchCategories } from '../../features/categories/categorySlice';
+import { createProduct, updateProduct, fetchProducts } from '../../features/products/productSlice';
 
 function EditProduct() {
     const { id } = useParams();
@@ -18,7 +18,8 @@ function EditProduct() {
         description: '',
         price: '',
         category: '',
-        stock: ''
+        status: 'active',
+        visibility: 'public'
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -34,11 +35,13 @@ function EditProduct() {
             dispatch(fetchProducts({ id }));
         } else {
             setFormData({
-                name: product.name,
-                description: product.description,
-                price: product.price,
-                category: product.category?._id || product.category,
-                stock: product.stock
+                name: product.name || '',
+                description: product.description || '',
+                price: product.price || '',
+                category: product.category || '',
+                sku: product.sku || '',
+                status: product.status || 'active',
+                visibility: product.visibility || 'public'
             });
         }
     }, [dispatch, id, product, categories.length]);
@@ -52,21 +55,43 @@ function EditProduct() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
         setError(null);
-
+        setLoading(true);
+        
         try {
-            await dispatch(updateProduct({ 
-                id, 
-                productData: {
-                    ...formData,
-                    price: Number(formData.price),
-                    stock: Number(formData.stock)
-                }
-            })).unwrap();
-            navigate(`/products/${id}`);
-        } catch (err) {
-            setError(err.message || 'Failed to update product');
+            // Validate required fields
+            if (!formData.name || !formData.description || !formData.price || !formData.category) {
+                throw new Error('Please fill in all required fields');
+            }
+
+            const productData = {
+                ...formData,
+                price: parseFloat(formData.price)
+            };
+
+            // Remove SKU field for new products
+            if (!product) {
+                delete productData.sku;
+            }
+
+            let result;
+            if (product) {
+                result = await dispatch(updateProduct({
+                    id: product._id,
+                    productData
+                })).unwrap();
+            } else {
+                result = await dispatch(createProduct(productData)).unwrap();
+            }
+
+            if (result?.data?._id) {
+                navigate(`/products/${result.data._id}`);
+            } else {
+                throw new Error('Failed to save product');
+            }
+        } catch (error) {
+            console.error('Error saving product:', error?.message || 'Unknown error');
+            setError(error?.message || 'Failed to save product');
         } finally {
             setLoading(false);
         }
@@ -78,7 +103,7 @@ function EditProduct() {
 
     return (
         <div className="max-w-2xl mx-auto p-4">
-            <h1 className="text-2xl font-bold mb-4">Edit Product</h1>
+            <h1 className="text-2xl font-bold mb-4">{product ? 'Edit' : 'Create'} Product</h1>
             {error && (
                 <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
                     {error}
@@ -96,6 +121,19 @@ function EditProduct() {
                         required
                     />
                 </div>
+                {product && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">SKU</label>
+                        <input
+                            type="text"
+                            name="sku"
+                            value={formData.sku}
+                            onChange={handleChange}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                            readOnly
+                        />
+                    </div>
+                )}
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Description</label>
                     <textarea
@@ -138,16 +176,30 @@ function EditProduct() {
                     </select>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Stock</label>
-                    <input
-                        type="number"
-                        name="stock"
-                        value={formData.stock}
+                    <label className="block text-sm font-medium text-gray-700">Status</label>
+                    <select
+                        name="status"
+                        value={formData.status}
                         onChange={handleChange}
-                        min="0"
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                         required
-                    />
+                    >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Visibility</label>
+                    <select
+                        name="visibility"
+                        value={formData.visibility}
+                        onChange={handleChange}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                        required
+                    >
+                        <option value="public">Public</option>
+                        <option value="private">Private</option>
+                    </select>
                 </div>
                 <div className="flex justify-end space-x-3">
                     <button

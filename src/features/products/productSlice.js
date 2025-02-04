@@ -23,18 +23,23 @@ export const createProduct = createAsyncThunk(
             if (!auth?.user?._id) {
                 throw new Error('User must be logged in to create a product');
             }
-            
+
             const dataWithSeller = {
                 ...productData,
                 seller: auth.user._id
             };
-            
+
+            console.log('Creating product:', dataWithSeller);
             const response = await productsAPI.createProduct(dataWithSeller);
-            console.log('Create response:', response);
-            return response.data;
+            console.log('Create product response:', response);
+            return response;
         } catch (error) {
             console.error('Create error:', error);
-            return rejectWithValue(error.message || 'Failed to create product');
+            return rejectWithValue(
+                error.response?.data?.message || 
+                error.message || 
+                'Failed to create product'
+            );
         }
     }
 );
@@ -85,8 +90,11 @@ const productSlice = createSlice({
     name: 'products',
     initialState,
     reducers: {
-        clearError: (state) => {
+        clearError(state) {
             state.error = null;
+        },
+        clearSelectedProduct(state) {
+            state.selectedProduct = null;
         }
     },
     extraReducers: (builder) => {
@@ -112,11 +120,12 @@ const productSlice = createSlice({
             })
             .addCase(createProduct.fulfilled, (state, action) => {
                 state.loading = false;
-                state.items.unshift(action.payload);
+                state.error = null;
+                state.items = [action.payload.data, ...state.items];
             })
             .addCase(createProduct.rejected, (state, action) => {
                 state.loading = false;
-                state.error = action.payload;
+                state.error = action.payload || 'Failed to create product';
             })
             // Update product
             .addCase(updateProduct.pending, (state) => {
@@ -154,5 +163,5 @@ const productSlice = createSlice({
     }
 });
 
-export const { clearError } = productSlice.actions;
+export const { clearError, clearSelectedProduct } = productSlice.actions;
 export default productSlice.reducer;
