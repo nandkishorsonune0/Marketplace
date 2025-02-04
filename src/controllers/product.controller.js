@@ -5,75 +5,63 @@ const { ApiResponse } = require('../utils/ApiResponse');
 const asyncHandler = require('../middleware/asyncHandler');
 
 // Get all products with pagination and filters
-exports.getProducts = async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const search = req.query.search || '';
-        const category = req.query.category;
-        const minPrice = req.query.minPrice;
-        const maxPrice = req.query.maxPrice;
-        const inStock = req.query.inStock;
+exports.getProducts = asyncHandler(async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const order = req.query.order || 'desc';
+    const search = req.query.search || '';
+    const category = req.query.category;
+    const minPrice = req.query.minPrice;
+    const maxPrice = req.query.maxPrice;
 
-        const query = {};
-
-        // Search filter
-        if (search) {
-            query.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { description: { $regex: search, $options: 'i' } }
-            ];
-        }
-
-        // Category filter
-        if (category) {
-            query.category = category;
-        }
-
-        // Price filter
-        if (minPrice || maxPrice) {
-            query.price = {};
-            if (minPrice) query.price.$gte = parseFloat(minPrice);
-            if (maxPrice) query.price.$lte = parseFloat(maxPrice);
-        }
-
-        // Stock filter
-        if (inStock === 'true') {
-            query.stock = { $gt: 0 };
-        } else if (inStock === 'false') {
-            query.stock = 0;
-        }
-
-        const skip = (page - 1) * limit;
-
-        const [products, total] = await Promise.all([
-            Product.find(query)
-                .populate('category')
-                .skip(skip)
-                .limit(limit)
-                .sort({ createdAt: -1 }),
-            Product.countDocuments(query)
-        ]);
-
-        const totalPages = Math.ceil(total / limit);
-        const hasNextPage = page < totalPages;
-        const hasPrevPage = page > 1;
-
-        res.json({
-            products,
-            pagination: {
-                total,
-                page,
-                limit,
-                totalPages,
-                hasNextPage,
-                hasPrevPage
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    // Build query
+    const query = {};
+    if (search) {
+        query.$or = [
+            { name: { $regex: search, $options: 'i' } },
+            { description: { $regex: search, $options: 'i' } }
+        ];
     }
-};
+    if (category) {
+        query.category = category;
+    }
+    if (minPrice || maxPrice) {
+        query.price = {};
+        if (minPrice) query.price.$gte = parseFloat(minPrice);
+        if (maxPrice) query.price.$lte = parseFloat(maxPrice);
+    }
+
+    // Execute query with pagination
+    const skip = (page - 1) * limit;
+    const [products, total] = await Promise.all([
+        Product.find(query)
+            .populate('category', 'name')
+            .populate('seller', 'name email')
+            .sort({ [sortBy]: order === 'desc' ? -1 : 1 })
+            .skip(skip)
+            .limit(limit)
+            .lean(),
+        Product.countDocuments(query)
+    ]);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json(new ApiResponse(200, {
+        products,
+        pagination: {
+            total,
+            page,
+            limit,
+            totalPages,
+            hasNextPage,
+            hasPrevPage
+        }
+    }));
+});
 
 // Get product by ID
 exports.getProductById = asyncHandler(async (req, res) => {
@@ -91,75 +79,116 @@ exports.getProductById = asyncHandler(async (req, res) => {
 
 // Create product
 exports.createProduct = asyncHandler(async (req, res) => {
-    const { name, description, price, category, stock, seller } = req.body;
+    try {
+        console.log('Request body:', req.body); // Debug log
+        const { name, description, price, category, stock } = req.body;
 
-    // Validate category exists
-    const categoryExists = await Category.findById(category);
-    if (!categoryExists) {
-        throw new ApiError(404, 'Category not found');
+        // Validate fields
+        if (!name || !description || !price || !category) {
+            throw new ApiError(400, 'Missing required fields');
+        }
+
+        // Validate price is a number
+        const numericPrice = Number(price);
+        if (isNaN(numericPrice)) {
+            throw new ApiError(400, 'Price must be a valid number');
+        }
+
+        // Validate category exists
+        const categoryExists = await Category.findById(category);
+        if (!categoryExists) {
+            throw new ApiError(400, 'Invalid category ID');
+        }
+
+        // Create product
+        const product = await Product.create({
+            name,
+            description,
+            price: numericPrice,
+            category,
+            stock: stock || 0,
+            seller: req.user._id
+        });
+
+        console.log('Product created:', product); // Debug log
+
+        const populatedProduct = await Product.findById(product._id)
+            .populate('category', 'name')
+            .populate('seller', 'name email')
+            .lean();
+
+        res.status(201).json(new ApiResponse(201, populatedProduct, "Product created successfully"));
+    } catch (error) {
+        console.error('Product creation error:', error); // Debug log
+        throw error;
     }
-
-    // Create product
-    const product = await Product.create({
-        name,
-        description,
-        price,
-        category,
-        stock,
-        seller: seller || req.user._id // Use provided seller or current user
-    });
-
-    // Populate category and seller information
-    await product.populate([
-        { path: 'category', select: 'name' },
-        { path: 'seller', select: 'name email' }
-    ]);
-
-    res.status(201).json(
-        new ApiResponse(201, product, 'Product created successfully')
-    );
 });
 
 // Update product
 exports.updateProduct = asyncHandler(async (req, res) => {
-    const { name, description, price, category, stock } = req.body;
+    try {
+        console.log('Update request received:', {
+            body: req.body,
+            params: req.params,
+            user: req.user._id
+        });
 
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-        throw new ApiError(404, 'Product not found');
-    }
-
-    // Check if user is authorized
-    if (product.seller.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-        throw new ApiError(403, 'Not authorized to update this product');
-    }
-
-    // Check if category exists if it's being updated
-    if (category) {
-        const categoryExists = await Category.findById(category);
-        if (!categoryExists) {
-            throw new ApiError(400, 'Invalid category');
+        // Find and validate product
+        const product = await Product.findById(req.params.id);
+        if (!product) {
+            throw new ApiError(404, 'Product not found');
         }
+
+        // Check if user is authorized
+        if (product.seller.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            throw new ApiError(403, 'Not authorized to update this product');
+        }
+
+        // Validate the update data
+        const updates = {};
+        if (req.body.name) updates.name = req.body.name;
+        if (req.body.description) updates.description = req.body.description;
+        if (req.body.price) {
+            const price = Number(req.body.price);
+            if (isNaN(price) || price < 0) {
+                throw new ApiError(400, 'Invalid price value');
+            }
+            updates.price = price;
+        }
+        if (req.body.stock !== undefined) {
+            const stock = Number(req.body.stock);
+            if (isNaN(stock) || stock < 0) {
+                throw new ApiError(400, 'Invalid stock value');
+            }
+            updates.stock = stock;
+        }
+        
+        // Check if category exists if it's being updated
+        if (req.body.category) {
+            const categoryExists = await Category.findById(req.body.category);
+            if (!categoryExists) {
+                throw new ApiError(400, 'Invalid category');
+            }
+            updates.category = req.body.category;
+        }
+
+        // Update the product with the validated data
+        const updatedProduct = await Product.findByIdAndUpdate(
+            req.params.id,
+            { $set: updates },
+            { 
+                new: true, 
+                runValidators: true 
+            }
+        ).populate('category', 'name')
+         .populate('seller', 'name email');
+
+        console.log('Product updated successfully:', updatedProduct);
+        res.status(200).json(new ApiResponse(200, updatedProduct));
+    } catch (error) {
+        console.error('Product update error:', error);
+        throw error;
     }
-
-    // Update product
-    Object.assign(product, {
-        name: name || product.name,
-        description: description || product.description,
-        price: price || product.price,
-        category: category || product.category,
-        stock: stock !== undefined ? stock : product.stock,
-        imageUrl: imageUrl || product.imageUrl
-    });
-
-    await product.save();
-
-    const updatedProduct = await Product.findById(product._id)
-        .populate('category', 'name')
-        .populate('seller', 'name email')
-        .lean();
-
-    res.status(200).json(new ApiResponse(200, updatedProduct));
 });
 
 // Delete product

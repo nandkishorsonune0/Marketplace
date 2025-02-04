@@ -6,86 +6,93 @@ const Product = require('../models/product.model');
 
 // Get all categories with advanced filtering and sorting
 exports.getCategories = asyncHandler(async (req, res) => {
-    const { 
-        search = '', 
-        status = '',
-        visibility,
-        sortBy = 'createdAt',
-        sortOrder = 'desc',
-        page = 1,
-        limit = 10,
-        includeEmpty = false,
-        parentCategory
-    } = req.query;
+    try {
+        const { 
+            search = '', 
+            status = '',
+            visibility,
+            sortBy = 'createdAt',
+            sortOrder = 'desc',
+            page = 1,
+            limit = 10
+        } = req.query;
 
-    const query = {};
+        console.log('Get Categories Request:', { 
+            search, status, visibility, sortBy, 
+            sortOrder, page, limit 
+        });
 
-    // Search by name or description
-    if (search) {
-        query.$or = [
-            { name: { $regex: search, $options: 'i' } },
-            { description: { $regex: search, $options: 'i' } }
-        ];
-    }
+        const query = {};
 
-    // Filter by status
-    if (status) {
-        query.status = status;
-    }
+        // Search by name or description
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { description: { $regex: search, $options: 'i' } }
+            ];
+        }
 
-    // Filter by visibility
-    if (visibility) {
-        query.visibility = visibility;
-    }
+        // Filter by status
+        if (status) {
+            query.status = status;
+        }
 
-    // Filter by parent category
-    if (parentCategory) {
-        query.parentCategory = parentCategory;
-    }
+        // Filter by visibility
+        if (visibility) {
+            query.visibility = visibility;
+        }
 
-    // Optional: filter out empty categories
-    if (!includeEmpty) {
-        const nonEmptyCategories = await Product.distinct('category');
-        query._id = { $in: nonEmptyCategories };
-    }
+        console.log('MongoDB Query:', query);
 
-    // Calculate pagination
-    const skip = (page - 1) * limit;
-    
-    // Build sort object
-    const sort = {
-        [sortBy]: sortOrder === 'desc' ? -1 : 1
-    };
+        // Calculate pagination
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        // Build sort object
+        const sort = {
+            [sortBy]: sortOrder === 'desc' ? -1 : 1
+        };
 
-    // Execute query with pagination
-    const [categories, total] = await Promise.all([
-        Category.find(query)
+        // Execute query with pagination
+        const categories = await Category.find(query)
             .sort(sort)
             .skip(skip)
             .limit(parseInt(limit))
-            .populate('parentCategory', 'name')
-            .lean(),
-        Category.countDocuments(query)
-    ]);
+            .lean();
 
-    // Calculate pagination info
-    const totalPages = Math.ceil(total / limit);
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
+        console.log('Found Categories:', categories);
 
-    res.status(200).json(
-        new ApiResponse(200, {
-            categories,
+        // Get total count
+        const total = await Category.countDocuments(query);
+
+        // Calculate pagination info
+        const totalPages = Math.ceil(total / parseInt(limit));
+
+        // Validate and transform data
+        const validatedCategories = categories.map(category => ({
+            _id: category._id.toString(),
+            name: category.name || '',
+            description: category.description || '',
+            status: category.status || 'active',
+            visibility: category.visibility || 'public',
+            createdAt: category.createdAt,
+            updatedAt: category.updatedAt
+        }));
+
+        // Send response with proper structure
+        res.status(200).json({
+            success: true,
+            data: validatedCategories,
             pagination: {
                 total,
                 page: parseInt(page),
                 limit: parseInt(limit),
-                totalPages,
-                hasNextPage,
-                hasPrevPage
+                totalPages
             }
-        })
-    );
+        });
+    } catch (error) {
+        console.error('Error in getCategories:', error);
+        throw new ApiError(500, 'Failed to fetch categories');
+    }
 });
 
 // Get category by ID
@@ -148,60 +155,51 @@ exports.createCategory = asyncHandler(async (req, res) => {
 
 // Update category
 exports.updateCategory = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const updateData = req.body;
+    try {
+        const { id } = req.params;
+        const updateData = req.body;
 
-    // Check if category exists
-    const category = await Category.findById(id);
-    if (!category) {
-        throw new ApiError(404, 'Category not found');
-    }
+        console.log('Updating category:', { id, updateData });
 
-    // If name or slug is being updated, check for duplicates
-    if (updateData.name || updateData.slug) {
-        const existingCategory = await Category.findOne({
-            _id: { $ne: id },
-            $or: [
-                updateData.name ? { name: { $regex: new RegExp(`^${updateData.name}$`, 'i') } } : null,
-                updateData.slug ? { slug: { $regex: new RegExp(`^${updateData.slug}$`, 'i') } } : null
-            ].filter(Boolean)
+        // Find the category first
+        const category = await Category.findById(id);
+        if (!category) {
+            throw new ApiError(404, 'Category not found');
+        }
+
+        // Update the category
+        const updatedCategory = await Category.findByIdAndUpdate(
+            id,
+            {
+                name: updateData.name,
+                description: updateData.description,
+                status: updateData.status,
+                visibility: updateData.visibility
+            },
+            { new: true, runValidators: true }
+        ).lean();
+
+        // Transform the response
+        const transformedCategory = {
+            _id: updatedCategory._id.toString(),
+            name: updatedCategory.name,
+            description: updatedCategory.description || '',
+            status: updatedCategory.status || 'active',
+            visibility: updatedCategory.visibility || 'public',
+            createdAt: updatedCategory.createdAt,
+            updatedAt: updatedCategory.updatedAt
+        };
+
+        console.log('Updated category:', transformedCategory);
+
+        res.status(200).json({
+            success: true,
+            data: transformedCategory
         });
-
-        if (existingCategory) {
-            throw new ApiError(400, 'Category with this name or slug already exists');
-        }
+    } catch (error) {
+        console.error('Error updating category:', error);
+        throw new ApiError(500, 'Failed to update category');
     }
-
-    // Validate parent category if provided
-    if (updateData.parentCategory) {
-        // Prevent setting self as parent
-        if (updateData.parentCategory.toString() === id) {
-            throw new ApiError(400, 'Category cannot be its own parent');
-        }
-
-        const parentExists = await Category.findById(updateData.parentCategory);
-        if (!parentExists) {
-            throw new ApiError(400, 'Parent category not found');
-        }
-
-        // Check for circular reference
-        let parent = parentExists;
-        while (parent.parentCategory) {
-            if (parent.parentCategory.toString() === id) {
-                throw new ApiError(400, 'Circular reference detected in category hierarchy');
-            }
-            parent = await Category.findById(parent.parentCategory);
-        }
-    }
-
-    // Update the category
-    const updatedCategory = await Category.findByIdAndUpdate(
-        id,
-        { $set: updateData },
-        { new: true, runValidators: true }
-    ).populate('parentCategory', 'name');
-
-    res.status(200).json(new ApiResponse(200, updatedCategory));
 });
 
 // Delete category

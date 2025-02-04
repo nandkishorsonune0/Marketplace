@@ -8,7 +8,7 @@ const productSchema = new mongoose.Schema({
     },
     description: {
         type: String,
-        required: false,
+        required: true,
         trim: true
     },
     price: {
@@ -24,18 +24,14 @@ const productSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    sku: {
-        type: String,
-        sparse: true,
-        unique: true,
-        default: function() {
-            return 'SKU-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-        }
-    },
     seller: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
+    },
+    imageUrl: {
+        type: String,
+        default: ''
     }
 }, {
     timestamps: true
