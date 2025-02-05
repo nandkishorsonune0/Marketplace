@@ -10,17 +10,25 @@ const {
     getOrderById,
     updateOrderStatus,
     cancelOrder,
-    getMyOrders
+    deleteOrder,
+    bulkDeleteOrders,
+    getOrderInvoice
 } = require('../controllers/order.controller');
 
 // All routes require authentication
-router.post('/', authenticateUser, createOrder);
-router.get('/my-orders', authenticateUser, getMyOrders);
-router.get('/:id', authenticateUser, getOrderById);
+router.use(authenticateUser);
+
+// Public routes (for authenticated users)
+router.post('/', createOrder);
+router.get('/my-orders', getOrders);
+router.get('/:id', getOrderById);
+router.post('/:id/cancel', cancelOrder);
+router.get('/:id/invoice', getOrderInvoice);
 
 // Admin only routes
-router.get('/', authenticateUser, authorizeRole('admin'), getOrders);
-router.put('/:id/status', authenticateUser, authorizeRole('admin'), updateOrderStatus);
-router.put('/:id/cancel', authenticateUser, authorizeRole('admin'), cancelOrder);
+router.get('/', authorizeRole('admin'), getOrders);
+router.put('/:id/status', authorizeRole('admin'), updateOrderStatus);
+router.delete('/:id', authorizeRole('admin'), deleteOrder);
+router.post('/bulk-delete', authorizeRole('admin'), bulkDeleteOrders);
 
 module.exports = router;

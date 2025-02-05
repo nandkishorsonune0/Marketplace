@@ -4,35 +4,8 @@ const { ApiError } = require('../utils/ApiError');
 const { ApiResponse } = require('../utils/ApiResponse');
 const asyncHandler = require('../middleware/asyncHandler');
 
-// Function to generate unique SKU
-const generateUniqueSku = async (productName) => {
-    const maxAttempts = 10;
-    let attempt = 0;
-    
-    while (attempt < maxAttempts) {
-        try {
-            const timestamp = Date.now().toString().slice(-6);
-            const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-            const namePrefix = (productName || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
-            const sku = `${namePrefix}${randomNum}${timestamp}`;
-            
-            // Check if SKU exists
-            const existingSku = await Product.findOne({ sku });
-            if (!existingSku) {
-                return sku;
-            }
-        } catch (error) {
-            console.error('Error generating SKU:', error);
-        }
-        
-        attempt++;
-    }
-    
-    throw new ApiError(500, 'Failed to generate unique SKU after multiple attempts');
-};
-
 // Get all products with pagination and filters
-exports.getProducts = asyncHandler(async (req, res) => {
+const getProducts = asyncHandler(async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const sortBy = req.query.sortBy || 'createdAt';
@@ -91,7 +64,7 @@ exports.getProducts = asyncHandler(async (req, res) => {
 });
 
 // Get product by ID
-exports.getProductById = asyncHandler(async (req, res) => {
+const getProductById = asyncHandler(async (req, res) => {
     const product = await Product.findById(req.params.id)
         .populate('category', 'name')
         .populate('seller', 'name email')
@@ -104,99 +77,86 @@ exports.getProductById = asyncHandler(async (req, res) => {
     res.status(200).json(new ApiResponse(200, product));
 });
 
-// Create product
-exports.createProduct = asyncHandler(async (req, res) => {
-    try {
-        const productData = req.body;
-        console.log('Creating product with data:', productData);
+// Upload product image
+const uploadProductImage = asyncHandler(async (req, res) => {
+    if (!req.file) {
+        throw new ApiError(400, 'No image file provided');
+    }
 
-        // Ensure required fields
-        if (!productData.name || !productData.description || !productData.price || !productData.category) {
+    const imageUrl = `/uploads/${req.file.filename}`;
+
+    res.status(200).json(new ApiResponse(200, {
+        imageUrl
+    }, 'Image uploaded successfully'));
+});
+
+// Create product
+const createProduct = asyncHandler(async (req, res) => {
+    try {
+        const { name, description, price, category, stock, sku, brand, status = 'active' } = req.body;
+        
+        // Validate required fields
+        if (!name || !description || !price || !category) {
             throw new ApiError(400, 'Missing required fields');
         }
 
-        // Ensure seller is provided
-        if (!productData.seller) {
-            throw new ApiError(400, 'Seller information is required');
+        // Validate price is a number
+        const numericPrice = Number(price);
+        if (isNaN(numericPrice)) {
+            throw new ApiError(400, 'Price must be a valid number');
         }
 
-        // Generate unique SKU if not provided
-        if (!productData.sku) {
-            try {
-                productData.sku = await generateUniqueSku(productData.name);
-                console.log('Generated SKU:', productData.sku);
-            } catch (error) {
-                console.error('Error generating SKU:', error);
-                throw new ApiError(500, 'Failed to generate SKU');
-            }
-        } else {
-            // Check if provided SKU already exists
-            const existingSku = await Product.findOne({ sku: productData.sku });
+        // Validate category exists
+        const categoryExists = await Category.findById(category);
+        if (!categoryExists) {
+            throw new ApiError(400, 'Invalid category ID');
+        }
+
+        // Validate SKU uniqueness if provided
+        if (sku) {
+            const existingSku = await Product.findOne({ sku });
             if (existingSku) {
-                throw new ApiError(400, 'Product with this SKU already exists');
+                throw new ApiError(400, 'SKU already exists');
             }
         }
 
-        // Create the product
-        const product = await Product.create({
-            ...productData,
-            price: parseFloat(productData.price),
-            status: productData.status || 'active',
-            visibility: productData.visibility || 'public'
-        });
-
-        // Populate seller information
-        await product.populate('seller', 'name email');
-        await product.populate('category', 'name');
-
-        console.log('Created product:', product);
-
-        // Transform the response
-        const transformedProduct = {
-            _id: product._id.toString(),
-            name: product.name,
-            description: product.description,
-            price: product.price,
-            sku: product.sku,
-            category: {
-                _id: product.category._id,
-                name: product.category.name
-            },
-            status: product.status,
-            visibility: product.visibility,
-            seller: {
-                _id: product.seller._id,
-                name: product.seller.name,
-                email: product.seller.email
-            },
-            createdAt: product.createdAt,
-            updatedAt: product.updatedAt
-        };
-
-        res.status(201).json({
-            success: true,
-            data: transformedProduct,
-            message: 'Product created successfully'
-        });
-    } catch (error) {
-        console.error('Error creating product:', error);
-        if (error.code === 11000) {
-            throw new ApiError(400, 'Product with this SKU already exists');
+        // Handle image upload
+        let image = null;
+        if (req.file) {
+            image = `/uploads/${req.file.filename}`;
+        } else if (req.body.imageUrl) {
+            image = req.body.imageUrl;
         }
+
+        // Create product
+        const product = await Product.create({
+            name,
+            description,
+            price: numericPrice,
+            category,
+            stock: stock || 0,
+            image,
+            seller: req.user._id,
+            sku,
+            brand,
+            status
+        });
+
+        const populatedProduct = await Product.findById(product._id)
+            .populate('category', 'name')
+            .populate('seller', 'name email')
+            .lean();
+
+        res.status(201).json(new ApiResponse(201, populatedProduct, "Product created successfully"));
+    } catch (error) {
+        console.error('Product creation error:', error);
         throw error;
     }
 });
 
 // Update product
-exports.updateProduct = asyncHandler(async (req, res) => {
+const updateProduct = asyncHandler(async (req, res) => {
     try {
-        console.log('Update request received:', {
-            body: req.body,
-            params: req.params,
-            user: req.user._id
-        });
-
-        // Find and validate product
         const product = await Product.findById(req.params.id);
         if (!product) {
             throw new ApiError(404, 'Product not found');
@@ -207,47 +167,21 @@ exports.updateProduct = asyncHandler(async (req, res) => {
             throw new ApiError(403, 'Not authorized to update this product');
         }
 
-        // Validate the update data
-        const updates = {};
-        if (req.body.name) updates.name = req.body.name;
-        if (req.body.description) updates.description = req.body.description;
-        if (req.body.price) {
-            const price = Number(req.body.price);
-            if (isNaN(price) || price < 0) {
-                throw new ApiError(400, 'Invalid price value');
-            }
-            updates.price = price;
-        }
-        if (req.body.stock !== undefined) {
-            const stock = Number(req.body.stock);
-            if (isNaN(stock) || stock < 0) {
-                throw new ApiError(400, 'Invalid stock value');
-            }
-            updates.stock = stock;
-        }
-        
-        // Check if category exists if it's being updated
-        if (req.body.category) {
-            const categoryExists = await Category.findById(req.body.category);
-            if (!categoryExists) {
-                throw new ApiError(400, 'Invalid category');
-            }
-            updates.category = req.body.category;
+        // Handle image update if new file is uploaded
+        if (req.file) {
+            req.body.image = `/uploads/${req.file.filename}`;
         }
 
-        // Update the product with the validated data
         const updatedProduct = await Product.findByIdAndUpdate(
             req.params.id,
-            { $set: updates },
-            { 
-                new: true, 
-                runValidators: true 
-            }
-        ).populate('category', 'name')
-         .populate('seller', 'name email');
+            { $set: req.body },
+            { new: true, runValidators: true }
+        )
+        .populate('category', 'name')
+        .populate('seller', 'name email')
+        .lean();
 
-        console.log('Product updated successfully:', updatedProduct);
-        res.status(200).json(new ApiResponse(200, updatedProduct));
+        res.status(200).json(new ApiResponse(200, updatedProduct, 'Product updated successfully'));
     } catch (error) {
         console.error('Product update error:', error);
         throw error;
@@ -255,7 +189,7 @@ exports.updateProduct = asyncHandler(async (req, res) => {
 });
 
 // Delete product
-exports.deleteProduct = asyncHandler(async (req, res) => {
+const deleteProduct = asyncHandler(async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) {
         throw new ApiError(404, 'Product not found');
@@ -266,13 +200,13 @@ exports.deleteProduct = asyncHandler(async (req, res) => {
         throw new ApiError(403, 'Not authorized to delete this product');
     }
 
-    await product.remove();
+    await Product.deleteOne({ _id: req.params.id });
 
     res.status(200).json(new ApiResponse(200, null, 'Product deleted successfully'));
 });
 
 // Get products by category
-exports.getProductsByCategory = asyncHandler(async (req, res) => {
+const getProductsByCategory = asyncHandler(async (req, res) => {
     const { categoryId } = req.params;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -304,3 +238,13 @@ exports.getProductsByCategory = asyncHandler(async (req, res) => {
         }
     }));
 });
+
+module.exports = {
+    getProducts,
+    getProductById,
+    createProduct,
+    updateProduct,
+    deleteProduct,
+    getProductsByCategory,
+    uploadProductImage
+};

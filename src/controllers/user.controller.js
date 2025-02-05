@@ -3,10 +3,117 @@ const { ApiError } = require('../utils/ApiError');
 const { ApiResponse } = require('../utils/ApiResponse');
 const asyncHandler = require('../middleware/asyncHandler');
 
-// Get all users
-const getAllUsers = asyncHandler(async (req, res) => {
-    const users = await User.find().select('-password');
-    res.json(new ApiResponse(200, { users }));
+// Get all users with filtering and pagination
+const getUsers = asyncHandler(async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const { search, status, sortBy = 'createdAt' } = req.query;
+
+        // Build query
+        let query = { role: 'customer' }; // Only get customers
+
+        // Add search filter
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        // Add status filter
+        if (status) {
+            query.status = status;
+        }
+
+        // Build sort object
+        let sort = {};
+        switch (sortBy) {
+            case 'name':
+                sort.name = 1;
+                break;
+            case 'orderCount':
+                sort.orderCount = -1;
+                break;
+            case 'totalSpent':
+                sort.totalSpent = -1;
+                break;
+            default:
+                sort.createdAt = -1;
+        }
+
+        // Execute query with pagination
+        const skip = (page - 1) * limit;
+        
+        // Get users with order stats
+        const aggregationPipeline = [
+            { $match: query },
+            {
+                $lookup: {
+                    from: 'orders',
+                    localField: '_id',
+                    foreignField: 'user',
+                    as: 'orders'
+                }
+            },
+            {
+                $addFields: {
+                    orderCount: { $size: '$orders' },
+                    totalSpent: {
+                        $reduce: {
+                            input: '$orders',
+                            initialValue: 0,
+                            in: { $add: ['$$value', '$$this.totalAmount'] }
+                        }
+                    }
+                }
+            },
+            {
+                $project: {
+                    password: 0,
+                    orders: 0
+                }
+            }
+        ];
+
+        // Add sorting
+        aggregationPipeline.push({ $sort: sort });
+
+        // Get total count
+        const totalUsers = await User.aggregate([
+            ...aggregationPipeline,
+            { $count: 'total' }
+        ]);
+
+        // Add pagination
+        aggregationPipeline.push(
+            { $skip: skip },
+            { $limit: limit }
+        );
+
+        const users = await User.aggregate(aggregationPipeline);
+
+        // Calculate pagination info
+        const total = totalUsers.length > 0 ? totalUsers[0].total : 0;
+        const totalPages = Math.ceil(total / limit);
+        const hasNextPage = page < totalPages;
+        const hasPrevPage = page > 1;
+
+        res.status(200).json(new ApiResponse(200, {
+            users,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages,
+                hasNextPage,
+                hasPrevPage
+            }
+        }));
+    } catch (error) {
+        console.error('Error in getUsers:', error);
+        throw new ApiError(500, 'Error fetching users');
+    }
 });
 
 // Get user by ID
@@ -73,7 +180,7 @@ const deleteUser = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-    getAllUsers,
+    getUsers,
     getUserById,
     updateUser,
     deleteUser

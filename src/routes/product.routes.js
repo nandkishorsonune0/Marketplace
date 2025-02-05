@@ -1,13 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateUser, authorizeRole } = require('../middleware/auth.middleware');
+const upload = require('../middleware/multer.middleware');
 const {
     getProducts,
     getProductById,
     createProduct,
     updateProduct,
     deleteProduct,
-    getProductsByCategory
+    getProductsByCategory,
+    uploadProductImage
 } = require('../controllers/product.controller');
 
 // Public routes - no authentication required
@@ -19,8 +21,11 @@ router.get('/category/:categoryId', getProductsByCategory);
 router.use(authenticateUser);
 
 // Seller and Admin routes
-router.post('/', authorizeRole(['seller', 'admin']), createProduct);
-router.put('/:id', authorizeRole(['seller', 'admin']), updateProduct);
+router.post('/', authorizeRole(['seller', 'admin']), upload.single('image'), createProduct);
+router.put('/:id', authorizeRole(['seller', 'admin']), upload.single('image'), updateProduct);
 router.delete('/:id', authorizeRole(['seller', 'admin']), deleteProduct);
+
+// Image upload route
+router.post('/upload-image', authorizeRole(['seller', 'admin']), upload.single('image'), uploadProductImage);
 
 module.exports = router;

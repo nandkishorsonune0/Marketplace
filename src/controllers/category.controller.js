@@ -120,11 +120,19 @@ exports.createCategory = asyncHandler(async (req, res) => {
         metadata = {}
     } = req.body;
 
+    // Validate required fields
+    if (!name) {
+        throw new ApiError(400, 'Category name is required');
+    }
+
+    // Generate slug if not provided
+    const categorySlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
     // Check if category with same name or slug exists
     const existingCategory = await Category.findOne({
         $or: [
             { name: { $regex: new RegExp(`^${name}$`, 'i') } },
-            { slug: { $regex: new RegExp(`^${slug}$`, 'i') } }
+            { slug: categorySlug }
         ]
     });
 
@@ -140,66 +148,116 @@ exports.createCategory = asyncHandler(async (req, res) => {
         }
     }
 
+    // Validate status and visibility
+    const validStatuses = ['active', 'inactive'];
+    const validVisibilities = ['public', 'private'];
+
+    if (!validStatuses.includes(status)) {
+        throw new ApiError(400, 'Invalid status value');
+    }
+
+    if (!validVisibilities.includes(visibility)) {
+        throw new ApiError(400, 'Invalid visibility value');
+    }
+
     const category = await Category.create({
         name,
         description,
-        slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
+        slug: categorySlug,
         parentCategory,
         status,
         visibility,
         metadata
     });
 
-    res.status(201).json(new ApiResponse(201, category));
+    res.status(201).json(new ApiResponse(201, category, 'Category created successfully'));
 });
 
 // Update category
 exports.updateCategory = asyncHandler(async (req, res) => {
-    try {
-        const { id } = req.params;
-        const updateData = req.body;
+    const { id } = req.params;
+    const { 
+        name, 
+        description, 
+        slug, 
+        parentCategory,
+        status,
+        visibility,
+        metadata 
+    } = req.body;
 
-        console.log('Updating category:', { id, updateData });
+    // Check if category exists
+    const category = await Category.findById(id);
+    if (!category) {
+        throw new ApiError(404, 'Category not found');
+    }
 
-        // Find the category first
-        const category = await Category.findById(id);
-        if (!category) {
-            throw new ApiError(404, 'Category not found');
+    // If updating name or slug, check for duplicates
+    if (name || slug) {
+        const categorySlug = slug || (name ? name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : category.slug);
+        
+        const existingCategory = await Category.findOne({
+            _id: { $ne: id },
+            $or: [
+                { name: name ? { $regex: new RegExp(`^${name}$`, 'i') } : undefined },
+                { slug: categorySlug }
+            ].filter(Boolean)
+        });
+
+        if (existingCategory) {
+            throw new ApiError(400, 'Category with this name or slug already exists');
+        }
+    }
+
+    // Validate parent category if provided
+    if (parentCategory) {
+        // Prevent setting self as parent
+        if (parentCategory === id) {
+            throw new ApiError(400, 'Category cannot be its own parent');
         }
 
-        // Update the category
-        const updatedCategory = await Category.findByIdAndUpdate(
-            id,
-            {
-                name: updateData.name,
-                description: updateData.description,
-                status: updateData.status,
-                visibility: updateData.visibility
-            },
-            { new: true, runValidators: true }
-        ).lean();
+        const parentExists = await Category.findById(parentCategory);
+        if (!parentExists) {
+            throw new ApiError(400, 'Parent category not found');
+        }
 
-        // Transform the response
-        const transformedCategory = {
-            _id: updatedCategory._id.toString(),
-            name: updatedCategory.name,
-            description: updatedCategory.description || '',
-            status: updatedCategory.status || 'active',
-            visibility: updatedCategory.visibility || 'public',
-            createdAt: updatedCategory.createdAt,
-            updatedAt: updatedCategory.updatedAt
-        };
-
-        console.log('Updated category:', transformedCategory);
-
-        res.status(200).json({
-            success: true,
-            data: transformedCategory
-        });
-    } catch (error) {
-        console.error('Error updating category:', error);
-        throw new ApiError(500, 'Failed to update category');
+        // Check for circular reference
+        let currentParent = parentExists;
+        while (currentParent.parentCategory) {
+            if (currentParent.parentCategory.toString() === id) {
+                throw new ApiError(400, 'Circular parent reference detected');
+            }
+            currentParent = await Category.findById(currentParent.parentCategory);
+        }
     }
+
+    // Validate status and visibility if provided
+    if (status && !['active', 'inactive'].includes(status)) {
+        throw new ApiError(400, 'Invalid status value');
+    }
+
+    if (visibility && !['public', 'private'].includes(visibility)) {
+        throw new ApiError(400, 'Invalid visibility value');
+    }
+
+    // Update category
+    const updatedCategory = await Category.findByIdAndUpdate(
+        id,
+        {
+            $set: {
+                ...(name && { name }),
+                ...(description && { description }),
+                ...(slug && { slug }),
+                ...(parentCategory && { parentCategory }),
+                ...(status && { status }),
+                ...(visibility && { visibility }),
+                ...(metadata && { metadata })
+            }
+        },
+        { new: true, runValidators: true }
+    ).populate('parentCategory', 'name');
+
+    res.status(200).json(new ApiResponse(200, updatedCategory, 'Category updated successfully'));
 });
 
 // Delete category

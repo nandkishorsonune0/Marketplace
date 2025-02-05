@@ -1,6 +1,7 @@
 const Order = require('../models/order.model');
 const Product = require('../models/product.model');
 const User = require('../models/user.model');
+const Category = require('../models/category.model');
 const { ApiError } = require('../utils/ApiError');
 const { ApiResponse } = require('../utils/ApiResponse');
 const asyncHandler = require('../middleware/asyncHandler');
@@ -14,6 +15,14 @@ const getDashboardStats = asyncHandler(async (req, res) => {
         totalProducts: 0,
         totalUsers: 0,
         totalRevenue: 0,
+        averageOrderValue: 0,
+        pendingOrders: 0,
+        lowStockProducts: 0,
+        totalCategories: 0,
+        monthlyGrowth: 0,
+        conversionRate: 0,
+        activeUsers: 0,
+        customerSatisfaction: 0,
         orderStatusCounts: {
             pending: 0,
             processing: 0,
@@ -32,91 +41,115 @@ const getDashboardStats = asyncHandler(async (req, res) => {
         }
 
         // Get total orders, revenue, products, and users
-        const [totalOrders, totalProducts, totalUsers] = await Promise.all([
+        const [totalOrders, totalProducts, totalUsers, totalCategories, lowStockProducts] = await Promise.all([
             Order.countDocuments(query),
             Product.countDocuments(query),
-            req.user.role === 'admin' ? User.countDocuments() : 0
+            req.user.role === 'admin' ? User.countDocuments() : 0,
+            Category.countDocuments(),
+            Product.countDocuments({ ...query, stock: { $lt: 10 } })
         ]);
 
         stats.totalOrders = totalOrders;
         stats.totalProducts = totalProducts;
         stats.totalUsers = totalUsers;
+        stats.totalCategories = totalCategories;
+        stats.lowStockProducts = lowStockProducts;
 
-        console.log('Basic stats fetched:', { totalOrders, totalProducts, totalUsers });
+        // Calculate total revenue and average order value from completed orders
+        const revenueData = await Order.aggregate([
+            { 
+                $match: { 
+                    ...query, 
+                    status: 'delivered',
+                    createdAt: { 
+                        $gte: new Date(new Date().setMonth(new Date().getMonth() - 1)) 
+                    }
+                } 
+            },
+            { 
+                $group: { 
+                    _id: null, 
+                    totalRevenue: { $sum: '$totalAmount' },
+                    avgOrderValue: { $avg: '$totalAmount' },
+                    count: { $sum: 1 }
+                } 
+            }
+        ]);
 
-        // Calculate total revenue from completed orders
-        const revenueQuery = [
-            { $match: { ...query, status: 'delivered' } },
-            { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-        ];
+        if (revenueData.length > 0) {
+            stats.totalRevenue = revenueData[0].totalRevenue;
+            stats.averageOrderValue = revenueData[0].avgOrderValue;
+            
+            // Calculate monthly growth
+            const previousMonthRevenue = await Order.aggregate([
+                { 
+                    $match: { 
+                        ...query, 
+                        status: 'delivered',
+                        createdAt: { 
+                            $gte: new Date(new Date().setMonth(new Date().getMonth() - 2)),
+                            $lt: new Date(new Date().setMonth(new Date().getMonth() - 1))
+                        }
+                    } 
+                },
+                { 
+                    $group: { 
+                        _id: null, 
+                        total: { $sum: '$totalAmount' }
+                    } 
+                }
+            ]);
 
-        const revenue = await Order.aggregate(revenueQuery);
-        stats.totalRevenue = revenue.length > 0 ? revenue[0].total : 0;
-        console.log('Revenue calculated:', stats.totalRevenue);
+            if (previousMonthRevenue.length > 0) {
+                const growth = ((revenueData[0].totalRevenue - previousMonthRevenue[0].total) / previousMonthRevenue[0].total) * 100;
+                stats.monthlyGrowth = Math.round(growth * 100) / 100;
+            }
+        }
 
         // Get order status counts
-        const orderStatusQuery = [
+        const orderStatusCounts = await Order.aggregate([
             { $match: query },
             { $group: { _id: '$status', count: { $sum: 1 } } }
-        ];
+        ]);
 
-        const orderStatusCounts = await Order.aggregate(orderStatusQuery);
         orderStatusCounts.forEach(({ _id, count }) => {
             if (_id in stats.orderStatusCounts) {
                 stats.orderStatusCounts[_id] = count;
             }
         });
 
-        console.log('Order status counts:', stats.orderStatusCounts);
+        stats.pendingOrders = stats.orderStatusCounts.pending;
+
+        // Calculate conversion rate (orders / user visits)
+        const totalVisits = await User.aggregate([
+            { $match: { lastVisit: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 1)) } } },
+            { $group: { _id: null, count: { $sum: 1 } } }
+        ]);
+
+        if (totalVisits.length > 0 && totalVisits[0].count > 0) {
+            stats.conversionRate = Math.round((revenueData[0]?.count || 0) / totalVisits[0].count * 100 * 100) / 100;
+        }
+
+        // Get active users (users who visited in last 7 days)
+        const activeUsers = await User.countDocuments({
+            lastVisit: { $gte: new Date(new Date().setDate(new Date().getDate() - 7)) }
+        });
+        stats.activeUsers = activeUsers;
+
+        // Calculate customer satisfaction (based on order ratings)
+        const ratings = await Order.aggregate([
+            { $match: { ...query, rating: { $exists: true } } },
+            { $group: { _id: null, avgRating: { $avg: '$rating' } } }
+        ]);
+
+        if (ratings.length > 0) {
+            stats.customerSatisfaction = Math.round(ratings[0].avgRating * 20 * 100) / 100; // Convert 5-star to percentage
+        }
+
         res.json(new ApiResponse(200, stats));
     } catch (error) {
         console.error('Error in getDashboardStats:', error);
         throw new ApiError(500, 'Error fetching dashboard statistics');
-    }
-});
-
-// Get recent orders
-const getRecentOrders = asyncHandler(async (req, res) => {
-    console.log('Fetching recent orders for user:', req.user._id, 'with role:', req.user.role);
-    
-    try {
-        let query = {};
-        
-        // If user is a seller, only show their orders
-        if (req.user.role === 'seller') {
-            query = { seller: req.user._id };
-        }
-
-        const recentOrders = await Order.find(query)
-            .populate('user', 'name email')
-            .populate('items.product', 'name price')
-            .sort('-createdAt')
-            .limit(10);
-
-        const formattedOrders = recentOrders.map(order => ({
-            _id: order._id,
-            orderNumber: order.orderNumber,
-            user: {
-                name: order.user?.name || 'N/A',
-                email: order.user?.email || 'N/A'
-            },
-            totalAmount: order.totalAmount,
-            status: order.status,
-            items: order.items.map(item => ({
-                product: {
-                    name: item.product?.name || 'Product Removed',
-                    price: item.price
-                },
-                quantity: item.quantity
-            })),
-            createdAt: order.createdAt
-        }));
-
-        console.log(`Found ${formattedOrders.length} recent orders`);
-        res.json(new ApiResponse(200, formattedOrders));
-    } catch (error) {
-        console.error('Error in getRecentOrders:', error);
-        throw new ApiError(500, 'Error fetching recent orders');
     }
 });
 
@@ -203,7 +236,6 @@ const getRevenueTrends = asyncHandler(async (req, res) => {
             values: trends.map(t => t.revenue)
         };
 
-        console.log(`Found ${trends.length} revenue data points for ${period} period`);
         res.json(new ApiResponse(200, response));
     } catch (error) {
         console.error('Error in getRevenueTrends:', error);
@@ -211,8 +243,186 @@ const getRevenueTrends = asyncHandler(async (req, res) => {
     }
 });
 
+// Get category distribution
+const getCategoryDistribution = asyncHandler(async (req, res) => {
+    try {
+        let query = {};
+        if (req.user.role === 'seller') {
+            query.seller = req.user._id;
+        }
+
+        const distribution = await Product.aggregate([
+            { $match: query },
+            { $group: { _id: '$category', count: { $sum: 1 } } },
+            { $lookup: {
+                from: 'categories',
+                localField: '_id',
+                foreignField: '_id',
+                as: 'category'
+            }},
+            { $unwind: '$category' },
+            { $project: {
+                _id: 0,
+                name: '$category.name',
+                count: 1
+            }},
+            { $sort: { count: -1 } }
+        ]);
+
+        res.json(new ApiResponse(200, {
+            labels: distribution.map(d => d.name),
+            values: distribution.map(d => d.count)
+        }));
+    } catch (error) {
+        console.error('Error in getCategoryDistribution:', error);
+        throw new ApiError(500, 'Error fetching category distribution');
+    }
+});
+
+// Get order status distribution
+const getOrderStatusDistribution = asyncHandler(async (req, res) => {
+    try {
+        let query = {};
+        if (req.user.role === 'seller') {
+            query.seller = req.user._id;
+        }
+
+        const distribution = await Order.aggregate([
+            { $match: query },
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+            { $project: {
+                _id: 0,
+                status: '$_id',
+                count: 1
+            }},
+            { $sort: { count: -1 } }
+        ]);
+
+        res.json(new ApiResponse(200, {
+            labels: distribution.map(d => d.status),
+            values: distribution.map(d => d.count)
+        }));
+    } catch (error) {
+        console.error('Error in getOrderStatusDistribution:', error);
+        throw new ApiError(500, 'Error fetching order status distribution');
+    }
+});
+
+// Get top products
+const getTopProducts = asyncHandler(async (req, res) => {
+    try {
+        let query = {};
+        if (req.user.role === 'seller') {
+            query.seller = req.user._id;
+        }
+
+        const topProducts = await Product.aggregate([
+            { $match: query },
+            { $lookup: {
+                from: 'orders',
+                localField: '_id',
+                foreignField: 'items.product',
+                as: 'orders'
+            }},
+            { $project: {
+                _id: 1,
+                name: 1,
+                price: 1,
+                image: 1,
+                sales: { $size: '$orders' }
+            }},
+            { $sort: { sales: -1 } },
+            { $limit: 5 }
+        ]);
+
+        res.json(new ApiResponse(200, topProducts));
+    } catch (error) {
+        console.error('Error in getTopProducts:', error);
+        throw new ApiError(500, 'Error fetching top products');
+    }
+});
+
+// Get recent orders
+const getRecentOrders = asyncHandler(async (req, res) => {
+    try {
+        let query = {};
+        if (req.user.role === 'seller') {
+            query.seller = req.user._id;
+        }
+
+        const recentOrders = await Order.aggregate([
+            { $match: query },
+            { $lookup: {
+                from: 'users',
+                localField: 'user',
+                foreignField: '_id',
+                as: 'user'
+            }},
+            { $unwind: '$user' },
+            { $project: {
+                _id: 1,
+                orderNumber: 1,
+                status: 1,
+                total: '$totalAmount',
+                customer: '$user.name',
+                createdAt: 1
+            }},
+            { $sort: { createdAt: -1 } },
+            { $limit: 5 }
+        ]);
+
+        res.json(new ApiResponse(200, recentOrders));
+    } catch (error) {
+        console.error('Error in getRecentOrders:', error);
+        throw new ApiError(500, 'Error fetching recent orders');
+    }
+});
+
+// Get customer activity
+const getCustomerActivity = asyncHandler(async (req, res) => {
+    try {
+        const days = 7;
+        const activity = [];
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+
+        for (let i = days - 1; i >= 0; i--) {
+            const start = new Date(today);
+            start.setDate(today.getDate() - i);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(start);
+            end.setHours(23, 59, 59, 999);
+
+            const count = await User.countDocuments({
+                lastVisit: {
+                    $gte: start,
+                    $lte: end
+                }
+            });
+
+            activity.push({
+                date: start.toISOString().split('T')[0],
+                count
+            });
+        }
+
+        res.json(new ApiResponse(200, {
+            labels: activity.map(a => a.date),
+            values: activity.map(a => a.count)
+        }));
+    } catch (error) {
+        console.error('Error in getCustomerActivity:', error);
+        throw new ApiError(500, 'Error fetching customer activity');
+    }
+});
+
 module.exports = {
     getDashboardStats,
+    getRevenueTrends,
+    getCategoryDistribution,
+    getOrderStatusDistribution,
+    getTopProducts,
     getRecentOrders,
-    getRevenueTrends
+    getCustomerActivity
 };
