@@ -1,227 +1,392 @@
-import React, { useState } from 'react';
-import { useFormik } from 'formik';
-import * as Yup from 'yup';
+import React, { useState, useEffect } from 'react';
+import {
+    Box,
+    Container,
+    Typography,
+    Paper,
+    Tabs,
+    Tab,
+    TextField,
+    Button,
+    Switch,
+    FormControlLabel,
+    Grid,
+    Alert,
+    CircularProgress,
+    MenuItem,
+    Select,
+    FormControl,
+    InputLabel
+} from '@mui/material';
+import { settingsAPI } from '../../services/api';
+import DashboardLayout from '../../components/DashboardLayout';
+import ImageUpload from '../../components/ImageUpload';
 
-const settingsTabs = [
-    { id: 'general', name: 'General' },
-    { id: 'security', name: 'Security' },
-    { id: 'notifications', name: 'Notifications' },
-];
-
-function Settings() {
-    const [activeTab, setActiveTab] = useState('general');
-
-    const formik = useFormik({
-        initialValues: {
-            siteName: 'My Marketplace',
-            siteDescription: 'A modern e-commerce marketplace',
-            supportEmail: 'support@example.com',
-            currentPassword: '',
-            newPassword: '',
-            confirmPassword: '',
+const Settings = () => {
+    const [activeTab, setActiveTab] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
+    const [settings, setSettings] = useState({
+        general: {
+            storeName: '',
+            storeEmail: '',
+            storePhone: '',
+            storeAddress: '',
+            currency: 'USD',
+            timezone: 'UTC'
+        },
+        notifications: {
             emailNotifications: true,
-            pushNotifications: false,
+            orderUpdates: true,
+            newProducts: true,
+            promotions: true
         },
-        validationSchema: Yup.object().shape({
-            siteName: Yup.string().required('Site name is required'),
-            siteDescription: Yup.string(),
-            supportEmail: Yup.string().email('Invalid email').required('Support email is required'),
-            currentPassword: Yup.string().when('newPassword', {
-                is: val => val && val.length > 0,
-                then: Yup.string().required('Current password is required')
-            }),
-            newPassword: Yup.string().min(6, 'Password must be at least 6 characters'),
-            confirmPassword: Yup.string().when('newPassword', {
-                is: val => val && val.length > 0,
-                then: Yup.string()
-                    .required('Please confirm your password')
-                    .oneOf([Yup.ref('newPassword')], 'Passwords must match')
-            }),
-        }),
-        onSubmit: (values) => {
-            console.log(values);
-            // Handle form submission
+        security: {
+            twoFactorAuth: false,
+            passwordExpiry: 90,
+            sessionTimeout: 30
         },
+        appearance: {
+            theme: 'light',
+            primaryColor: '#4F46E5',
+            logo: null
+        }
     });
 
+    useEffect(() => {
+        fetchSettings();
+    }, []);
+
+    const fetchSettings = async () => {
+        try {
+            setLoading(true);
+            const response = await settingsAPI.getSettings();
+            if (response.data) {
+                setSettings(response.data);
+            }
+        } catch (err) {
+            setError(err.message || 'Failed to load settings');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleTabChange = (event, newValue) => {
+        setActiveTab(newValue);
+    };
+
+    const handleChange = (section, field) => (event) => {
+        const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+        setSettings(prev => ({
+            ...prev,
+            [section]: {
+                ...prev[section],
+                [field]: value
+            }
+        }));
+    };
+
+    const handleLogoChange = async (logoUrl) => {
+        setSettings(prev => ({
+            ...prev,
+            appearance: {
+                ...prev.appearance,
+                logo: logoUrl
+            }
+        }));
+    };
+
+    const handleSubmit = async (section) => {
+        try {
+            setSaving(true);
+            setError(null);
+            setSuccess(null);
+
+            await settingsAPI.updateSettings(section, settings[section]);
+            setSuccess('Settings updated successfully');
+        } catch (err) {
+            setError(err.message || 'Failed to update settings');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <DashboardLayout>
+                <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+                    <CircularProgress />
+                </Box>
+            </DashboardLayout>
+        );
+    }
+
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
-            </div>
+        <DashboardLayout>
+            <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+                <Typography variant="h4" gutterBottom>
+                    Settings
+                </Typography>
 
-            {/* Tabs */}
-            <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                    {settingsTabs.map((tab) => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`
-                                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
-                                ${activeTab === tab.id
-                                    ? 'border-primary-500 text-primary-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }
-                            `}
-                        >
-                            {tab.name}
-                        </button>
-                    ))}
-                </nav>
-            </div>
+                {error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        {error}
+                    </Alert>
+                )}
 
-            {/* Settings Content */}
-            <div className="mt-6">
-                <form onSubmit={formik.handleSubmit}>
-                    {/* General Settings */}
-                    {activeTab === 'general' && (
-                        <div className="space-y-6">
-                            <div>
-                                <label htmlFor="siteName" className="block text-sm font-medium text-gray-700">
-                                    Site Name
-                                </label>
-                                <input
-                                    type="text"
-                                    id="siteName"
-                                    {...formik.getFieldProps('siteName')}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                                />
-                                {formik.touched.siteName && formik.errors.siteName && (
-                                    <p className="mt-2 text-sm text-red-600">{formik.errors.siteName}</p>
-                                )}
-                            </div>
+                {success && (
+                    <Alert severity="success" sx={{ mb: 2 }}>
+                        {success}
+                    </Alert>
+                )}
 
-                            <div>
-                                <label htmlFor="siteDescription" className="block text-sm font-medium text-gray-700">
-                                    Site Description
-                                </label>
-                                <textarea
-                                    id="siteDescription"
-                                    rows={3}
-                                    {...formik.getFieldProps('siteDescription')}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                                />
-                            </div>
+                <Paper sx={{ mt: 3 }}>
+                    <Tabs
+                        value={activeTab}
+                        onChange={handleTabChange}
+                        indicatorColor="primary"
+                        textColor="primary"
+                        sx={{ borderBottom: 1, borderColor: 'divider' }}
+                    >
+                        <Tab label="General" />
+                        <Tab label="Notifications" />
+                        <Tab label="Security" />
+                        <Tab label="Appearance" />
+                    </Tabs>
 
-                            <div>
-                                <label htmlFor="supportEmail" className="block text-sm font-medium text-gray-700">
-                                    Support Email
-                                </label>
-                                <input
-                                    type="email"
-                                    id="supportEmail"
-                                    {...formik.getFieldProps('supportEmail')}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                                />
-                                {formik.touched.supportEmail && formik.errors.supportEmail && (
-                                    <p className="mt-2 text-sm text-red-600">{formik.errors.supportEmail}</p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Security Settings */}
-                    {activeTab === 'security' && (
-                        <div className="space-y-6">
-                            <div>
-                                <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700">
-                                    Current Password
-                                </label>
-                                <input
-                                    type="password"
-                                    id="currentPassword"
-                                    {...formik.getFieldProps('currentPassword')}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                                />
-                                {formik.touched.currentPassword && formik.errors.currentPassword && (
-                                    <p className="mt-2 text-sm text-red-600">{formik.errors.currentPassword}</p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">
-                                    New Password
-                                </label>
-                                <input
-                                    type="password"
-                                    id="newPassword"
-                                    {...formik.getFieldProps('newPassword')}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                                />
-                                {formik.touched.newPassword && formik.errors.newPassword && (
-                                    <p className="mt-2 text-sm text-red-600">{formik.errors.newPassword}</p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                                    Confirm Password
-                                </label>
-                                <input
-                                    type="password"
-                                    id="confirmPassword"
-                                    {...formik.getFieldProps('confirmPassword')}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                                />
-                                {formik.touched.confirmPassword && formik.errors.confirmPassword && (
-                                    <p className="mt-2 text-sm text-red-600">{formik.errors.confirmPassword}</p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Notification Settings */}
-                    {activeTab === 'notifications' && (
-                        <div className="space-y-6">
-                            <div className="flex items-start">
-                                <div className="flex items-center h-5">
-                                    <input
-                                        id="emailNotifications"
-                                        type="checkbox"
-                                        {...formik.getFieldProps('emailNotifications')}
-                                        className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
+                    <Box p={3}>
+                        {activeTab === 0 && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Store Name"
+                                        value={settings.general.storeName}
+                                        onChange={handleChange('general', 'storeName')}
                                     />
-                                </div>
-                                <div className="ml-3 text-sm">
-                                    <label htmlFor="emailNotifications" className="font-medium text-gray-700">
-                                        Email Notifications
-                                    </label>
-                                    <p className="text-gray-500">Receive email notifications about orders and updates</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-start">
-                                <div className="flex items-center h-5">
-                                    <input
-                                        id="pushNotifications"
-                                        type="checkbox"
-                                        {...formik.getFieldProps('pushNotifications')}
-                                        className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Store Email"
+                                        type="email"
+                                        value={settings.general.storeEmail}
+                                        onChange={handleChange('general', 'storeEmail')}
                                     />
-                                </div>
-                                <div className="ml-3 text-sm">
-                                    <label htmlFor="pushNotifications" className="font-medium text-gray-700">
-                                        Push Notifications
-                                    </label>
-                                    <p className="text-gray-500">Receive push notifications about orders and updates</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Store Phone"
+                                        value={settings.general.storePhone}
+                                        onChange={handleChange('general', 'storePhone')}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Store Address"
+                                        multiline
+                                        rows={2}
+                                        value={settings.general.storeAddress}
+                                        onChange={handleChange('general', 'storeAddress')}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl fullWidth>
+                                        <InputLabel>Currency</InputLabel>
+                                        <Select
+                                            value={settings.general.currency}
+                                            onChange={handleChange('general', 'currency')}
+                                            label="Currency"
+                                        >
+                                            <MenuItem value="USD">USD ($)</MenuItem>
+                                            <MenuItem value="EUR">EUR (€)</MenuItem>
+                                            <MenuItem value="GBP">GBP (£)</MenuItem>
+                                            <MenuItem value="INR">INR (₹)</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <FormControl fullWidth>
+                                        <InputLabel>Timezone</InputLabel>
+                                        <Select
+                                            value={settings.general.timezone}
+                                            onChange={handleChange('general', 'timezone')}
+                                            label="Timezone"
+                                        >
+                                            <MenuItem value="UTC">UTC</MenuItem>
+                                            <MenuItem value="EST">EST</MenuItem>
+                                            <MenuItem value="PST">PST</MenuItem>
+                                            <MenuItem value="IST">IST</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleSubmit('general')}
+                                        disabled={saving}
+                                    >
+                                        {saving ? 'Saving...' : 'Save General Settings'}
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        )}
 
-                    <div className="mt-6">
-                        <button
-                            type="submit"
-                            className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                        >
-                            Save Changes
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                        {activeTab === 1 && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={settings.notifications.emailNotifications}
+                                                onChange={handleChange('notifications', 'emailNotifications')}
+                                            />
+                                        }
+                                        label="Email Notifications"
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={settings.notifications.orderUpdates}
+                                                onChange={handleChange('notifications', 'orderUpdates')}
+                                            />
+                                        }
+                                        label="Order Updates"
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={settings.notifications.newProducts}
+                                                onChange={handleChange('notifications', 'newProducts')}
+                                            />
+                                        }
+                                        label="New Product Notifications"
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={settings.notifications.promotions}
+                                                onChange={handleChange('notifications', 'promotions')}
+                                            />
+                                        }
+                                        label="Promotional Notifications"
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleSubmit('notifications')}
+                                        disabled={saving}
+                                    >
+                                        {saving ? 'Saving...' : 'Save Notification Settings'}
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        )}
+
+                        {activeTab === 2 && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={settings.security.twoFactorAuth}
+                                                onChange={handleChange('security', 'twoFactorAuth')}
+                                            />
+                                        }
+                                        label="Two-Factor Authentication"
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        type="number"
+                                        label="Password Expiry (days)"
+                                        value={settings.security.passwordExpiry}
+                                        onChange={handleChange('security', 'passwordExpiry')}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <TextField
+                                        fullWidth
+                                        type="number"
+                                        label="Session Timeout (minutes)"
+                                        value={settings.security.sessionTimeout}
+                                        onChange={handleChange('security', 'sessionTimeout')}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleSubmit('security')}
+                                        disabled={saving}
+                                    >
+                                        {saving ? 'Saving...' : 'Save Security Settings'}
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        )}
+
+                        {activeTab === 3 && (
+                            <Grid container spacing={3}>
+                                <Grid item xs={12}>
+                                    <FormControl fullWidth>
+                                        <InputLabel>Theme</InputLabel>
+                                        <Select
+                                            value={settings.appearance.theme}
+                                            onChange={handleChange('appearance', 'theme')}
+                                            label="Theme"
+                                        >
+                                            <MenuItem value="light">Light</MenuItem>
+                                            <MenuItem value="dark">Dark</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Primary Color"
+                                        type="color"
+                                        value={settings.appearance.primaryColor}
+                                        onChange={handleChange('appearance', 'primaryColor')}
+                                        InputProps={{ sx: { height: 56 } }}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Typography variant="subtitle1" gutterBottom>
+                                        Store Logo
+                                    </Typography>
+                                    <ImageUpload
+                                        initialImage={settings.appearance.logo}
+                                        onImageUpload={handleLogoChange}
+                                    />
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Button
+                                        variant="contained"
+                                        onClick={() => handleSubmit('appearance')}
+                                        disabled={saving}
+                                    >
+                                        {saving ? 'Saving...' : 'Save Appearance Settings'}
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        )}
+                    </Box>
+                </Paper>
+            </Container>
+        </DashboardLayout>
     );
-}
+};
 
 export default Settings;

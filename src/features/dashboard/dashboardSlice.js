@@ -1,63 +1,84 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { dashboardAPI } from '../../services/api';
+import { analyticsAPI } from '../../services/api';
 
 // Async thunks
 export const fetchDashboardStats = createAsyncThunk(
     'dashboard/fetchStats',
-    async (_, { rejectWithValue }) => {
-        try {
-            const response = await dashboardAPI.getStats();
-            return response.data;
-        } catch (error) {
-            return rejectWithValue(error.response?.data?.message || 'Failed to fetch dashboard stats');
-        }
+    async () => {
+        const response = await analyticsAPI.getDashboardStats();
+        return response.data;
     }
 );
 
 export const fetchRevenueTrends = createAsyncThunk(
     'dashboard/fetchRevenueTrends',
-    async (params, { rejectWithValue }) => {
-        try {
-            const response = await dashboardAPI.getRevenueTrends(params);
-            return response.data;
-        } catch (error) {
-            return rejectWithValue(error.response?.data?.message || 'Failed to fetch revenue trends');
-        }
+    async (params) => {
+        const response = await analyticsAPI.getSalesTrends(params);
+        return response.data;
+    }
+);
+
+export const fetchCategoryDistribution = createAsyncThunk(
+    'dashboard/fetchCategoryDistribution',
+    async () => {
+        const response = await analyticsAPI.getCategoryDistribution();
+        return response.data;
+    }
+);
+
+export const fetchOrderStatusDistribution = createAsyncThunk(
+    'dashboard/fetchOrderStatusDistribution',
+    async () => {
+        const response = await analyticsAPI.getOrderStatusDistribution();
+        return response.data;
+    }
+);
+
+export const fetchTopProducts = createAsyncThunk(
+    'dashboard/fetchTopProducts',
+    async () => {
+        const response = await analyticsAPI.getTopProducts();
+        return response.data;
     }
 );
 
 export const fetchRecentOrders = createAsyncThunk(
     'dashboard/fetchRecentOrders',
-    async (_, { rejectWithValue }) => {
-        try {
-            const response = await dashboardAPI.getRecentOrders();
-            return response.data;
-        } catch (error) {
-            return rejectWithValue(error.response?.data?.message || 'Failed to fetch recent orders');
-        }
+    async () => {
+        const response = await analyticsAPI.getRecentOrders();
+        return response.data;
+    }
+);
+
+export const fetchCustomerActivity = createAsyncThunk(
+    'dashboard/fetchCustomerActivity',
+    async () => {
+        const response = await analyticsAPI.getCustomerActivity();
+        return response.data;
     }
 );
 
 const initialState = {
-    stats: {
-        totalOrders: 0,
-        totalProducts: 0,
-        totalUsers: 0,
-        totalRevenue: 0,
-        orderStatusCounts: {
-            pending: 0,
-            processing: 0,
-            shipped: 0,
-            delivered: 0,
-            cancelled: 0
-        }
-    },
+    stats: null,
     revenueTrends: {
         period: 'monthly',
         labels: [],
         values: []
     },
+    categoryDistribution: {
+        labels: [],
+        values: []
+    },
+    orderStatusDistribution: {
+        labels: [],
+        values: []
+    },
+    topProducts: [],
     recentOrders: [],
+    customerActivity: {
+        labels: [],
+        values: []
+    },
     loading: false,
     error: null
 };
@@ -72,7 +93,7 @@ const dashboardSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
-            // Fetch dashboard stats
+            // Dashboard Stats
             .addCase(fetchDashboardStats.pending, (state) => {
                 state.loading = true;
                 state.error = null;
@@ -83,28 +104,61 @@ const dashboardSlice = createSlice({
             })
             .addCase(fetchDashboardStats.rejected, (state, action) => {
                 state.loading = false;
-                state.error = action.payload;
+                state.error = action.error.message;
             })
-
-            // Fetch revenue trends
+            // Revenue Trends
             .addCase(fetchRevenueTrends.pending, (state) => {
                 state.loading = true;
                 state.error = null;
             })
             .addCase(fetchRevenueTrends.fulfilled, (state, action) => {
                 state.loading = false;
-                state.revenueTrends = {
-                    period: action.payload.period,
-                    labels: action.payload.labels || [],
-                    values: action.payload.values || []
-                };
+                state.revenueTrends = action.payload;
             })
             .addCase(fetchRevenueTrends.rejected, (state, action) => {
                 state.loading = false;
-                state.error = action.payload;
+                state.error = action.error.message;
             })
-
-            // Fetch recent orders
+            // Category Distribution
+            .addCase(fetchCategoryDistribution.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(fetchCategoryDistribution.fulfilled, (state, action) => {
+                state.loading = false;
+                state.categoryDistribution = action.payload;
+            })
+            .addCase(fetchCategoryDistribution.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.error.message;
+            })
+            // Order Status Distribution
+            .addCase(fetchOrderStatusDistribution.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(fetchOrderStatusDistribution.fulfilled, (state, action) => {
+                state.loading = false;
+                state.orderStatusDistribution = action.payload;
+            })
+            .addCase(fetchOrderStatusDistribution.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.error.message;
+            })
+            // Top Products
+            .addCase(fetchTopProducts.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(fetchTopProducts.fulfilled, (state, action) => {
+                state.loading = false;
+                state.topProducts = action.payload;
+            })
+            .addCase(fetchTopProducts.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.error.message;
+            })
+            // Recent Orders
             .addCase(fetchRecentOrders.pending, (state) => {
                 state.loading = true;
                 state.error = null;
@@ -115,7 +169,20 @@ const dashboardSlice = createSlice({
             })
             .addCase(fetchRecentOrders.rejected, (state, action) => {
                 state.loading = false;
-                state.error = action.payload;
+                state.error = action.error.message;
+            })
+            // Customer Activity
+            .addCase(fetchCustomerActivity.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(fetchCustomerActivity.fulfilled, (state, action) => {
+                state.loading = false;
+                state.customerActivity = action.payload;
+            })
+            .addCase(fetchCustomerActivity.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.error.message;
             });
     }
 });

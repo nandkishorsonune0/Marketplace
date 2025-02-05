@@ -1,13 +1,13 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { productsAPI } from '../../services/api';
+import { productAPI } from '../../services/api';
 
 // Async thunks
 export const fetchProducts = createAsyncThunk(
     'products/fetchProducts',
     async (params, { rejectWithValue }) => {
         try {
-            const response = await productsAPI.getProducts(params);
-            return response;
+            const response = await productAPI.getProducts(params);
+            return response.data;
         } catch (error) {
             console.error('Fetch error:', error);
             return rejectWithValue(error.message || 'Failed to fetch products');
@@ -30,9 +30,9 @@ export const createProduct = createAsyncThunk(
             };
 
             console.log('Creating product:', dataWithSeller);
-            const response = await productsAPI.createProduct(dataWithSeller);
+            const response = await productAPI.createProduct(dataWithSeller);
             console.log('Create product response:', response);
-            return response;
+            return response.data;
         } catch (error) {
             console.error('Create error:', error);
             return rejectWithValue(
@@ -49,8 +49,8 @@ export const updateProduct = createAsyncThunk(
     async ({ id, productData }, { rejectWithValue }) => {
         try {
             console.log('Updating product:', { id, productData });
-            const response = await productsAPI.updateProduct(id, productData);
-            return { id, ...response.data };
+            const response = await productAPI.updateProduct(id, productData);
+            return response.data;
         } catch (error) {
             console.error('Update error:', error);
             return rejectWithValue(error.message || 'Failed to update product');
@@ -62,7 +62,7 @@ export const deleteProduct = createAsyncThunk(
     'products/deleteProduct',
     async (id, { rejectWithValue }) => {
         try {
-            await productsAPI.deleteProduct(id);
+            await productAPI.deleteProduct(id);
             console.log('Deleted product with id:', id);
             return id;
         } catch (error) {

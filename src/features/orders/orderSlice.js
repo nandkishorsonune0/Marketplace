@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { ordersAPI } from '../../services/api';
+import { orderAPI } from '../../services/api';
 
 const initialState = {
   items: [],
@@ -9,26 +9,18 @@ const initialState = {
 };
 
 export const fetchOrders = createAsyncThunk(
-  'orders/fetchAll',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await ordersAPI.getAll();
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
+  'orders/fetchOrders',
+  async (params) => {
+    const response = await orderAPI.getOrders(params);
+    return response.data;
   }
 );
 
 export const fetchOrderById = createAsyncThunk(
-  'orders/fetchById',
-  async (id, { rejectWithValue }) => {
-    try {
-      const response = await ordersAPI.getById(id);
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
+  'orders/fetchOrderById',
+  async (id) => {
+    const response = await orderAPI.getOrder(id);
+    return response.data;
   }
 );
 
@@ -36,7 +28,7 @@ export const createOrder = createAsyncThunk(
   'orders/create',
   async (orderData, { rejectWithValue }) => {
     try {
-      const response = await ordersAPI.create(orderData);
+      const response = await orderAPI.create(orderData);
       return response.data;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -48,7 +40,7 @@ export const updateOrder = createAsyncThunk(
   'orders/update',
   async ({ id, data }, { rejectWithValue }) => {
     try {
-      await ordersAPI.update(id, data);
+      await orderAPI.update(id, data);
       return { id, ...data };
     } catch (error) {
       return rejectWithValue(error.message);
@@ -56,15 +48,19 @@ export const updateOrder = createAsyncThunk(
   }
 );
 
+export const updateOrderStatus = createAsyncThunk(
+  'orders/updateOrderStatus',
+  async ({ id, status }) => {
+    const response = await orderAPI.updateOrderStatus(id, status);
+    return response.data;
+  }
+);
+
 export const deleteOrder = createAsyncThunk(
-  'orders/delete',
-  async (id, { rejectWithValue }) => {
-    try {
-      await ordersAPI.delete(id);
-      return id;
-    } catch (error) {
-      return rejectWithValue(error.message);
-    }
+  'orders/deleteOrder',
+  async (id) => {
+    await orderAPI.deleteOrder(id);
+    return id;
   }
 );
 
@@ -133,6 +129,22 @@ const orderSlice = createSlice({
         }
       })
       .addCase(updateOrder.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload;
+      })
+      // Update order status
+      .addCase(updateOrderStatus.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(updateOrderStatus.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const index = state.items.findIndex(item => item.id === action.payload.id);
+        if (index !== -1) {
+          state.items[index] = action.payload;
+        }
+      })
+      .addCase(updateOrderStatus.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
       })

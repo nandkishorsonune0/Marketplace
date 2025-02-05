@@ -1,463 +1,294 @@
-import React, { useEffect, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useLocation } from 'react-router-dom';
-import {
-    fetchProducts,
-    createProduct,
-    updateProduct,
-    deleteProduct,
-    clearError
-} from '../../features/products/productSlice';
-import { fetchCategories } from '../../features/categories/categorySlice';
-import { selectUser } from '../../features/auth/authSlice';
-import {
-    Box,
-    Button,
-    Container,
-    Grid,
-    Paper,
-    Typography,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    TextField,
-    IconButton,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    TablePagination,
-    Alert,
-    CircularProgress,
-    FormControl,
-    InputLabel,
-    Select,
-    MenuItem
-} from '@mui/material';
-import {
-    Add as AddIcon,
-    Edit as EditIcon,
-    Delete as DeleteIcon,
-    Search as SearchIcon
-} from '@mui/icons-material';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { productAPI, categoryAPI } from '../../services/api';
+import DashboardLayout from '../../components/DashboardLayout';
 
 const Products = () => {
-    const dispatch = useDispatch();
     const navigate = useNavigate();
-    const location = useLocation();
-    const [openDialog, setOpenDialog] = useState(false);
-    const [selectedProduct, setSelectedProduct] = useState(null);
-    const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        price: '',
-        category: '',
-        stock: '0'
-    });
-
-    const [searchQuery, setSearchQuery] = useState('');
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(5);
+    const [products, setProducts] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [filters, setFilters] = useState({
         category: '',
-        minPrice: '',
-        maxPrice: '',
-        inStock: ''
+        search: '',
+        status: '',
+        sort: 'newest'
     });
 
-    // Get products and categories from Redux store
-    const { items: products, loading, error } = useSelector((state) => state.products);
-    const { items: categories = [] } = useSelector((state) => state.categories) || { items: [] };
-    const user = useSelector(selectUser);
-
-    useEffect(() => {
-        // Load categories immediately when component mounts
-        dispatch(fetchCategories());
-    }, [dispatch]);
-
-    useEffect(() => {
-        if (location.pathname === '/products') {
-            loadProducts();
-        }
-    }, [dispatch, location.pathname, page, rowsPerPage, searchQuery, filters]);
-
-    const loadProducts = async () => {
+    const fetchData = React.useCallback(async () => {
         try {
-            await dispatch(fetchProducts({
-                page: page + 1,
-                limit: rowsPerPage,
-                search: searchQuery,
-                category: filters.category,
-                minPrice: filters.minPrice,
-                maxPrice: filters.maxPrice,
-                inStock: filters.inStock
-            })).unwrap();
-        } catch (error) {
-            console.error('Error loading products:', error);
+            setLoading(true);
+            setError(null);
+            const [productsRes, categoriesRes] = await Promise.all([
+                productAPI.getProducts(filters),
+                categoryAPI.getCategories()
+            ]);
+            
+            // Handle products data
+            const productsData = productsRes.data?.data || productsRes.data || [];
+            setProducts(Array.isArray(productsData) ? productsData : []);
+
+            // Handle categories data
+            const categoriesData = categoriesRes.data?.data || categoriesRes.data || [];
+            setCategories(Array.isArray(categoriesData) ? categoriesData : []);
+
+            console.log('Products:', productsData);
+            console.log('Categories:', categoriesData);
+        } catch (err) {
+            console.error('Error fetching data:', err);
+            setError(err.response?.data?.message || 'Failed to load products');
+            setProducts([]);
+            setCategories([]);
+        } finally {
+            setLoading(false);
         }
-    };
+    }, [filters]);
 
-    const handleOpenDialog = (product = null) => {
-        if (product) {
-            console.log('Opening edit dialog with product:', product);
-            setSelectedProduct(product);
-            setFormData({
-                name: product.name || '',
-                description: product.description || '',
-                price: product.price || '',
-                category: product.category?._id || '',
-                stock: product.stock || '0'
-            });
-        } else {
-            setSelectedProduct(null);
-            setFormData({
-                name: '',
-                description: '',
-                price: '',
-                category: '',
-                stock: '0'
-            });
-        }
-        setOpenDialog(true);
-    };
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
-    const handleCloseDialog = () => {
-        setOpenDialog(false);
-        setSelectedProduct(null);
-        setFormData({
-            name: '',
-            description: '',
-            price: '',
-            category: '',
-            stock: '0'
-        });
-    };
-
-    const handleInputChange = (e) => {
+    const handleFilterChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        
-        // Validate required fields
-        if (!formData.name || !formData.price || !formData.category) {
-            alert('Please fill all required fields');
-            return;
-        }
-
-        // Build product data with required fields
-        const productData = {
-            name: formData.name.trim(),
-            description: formData.description.trim(),
-            price: parseFloat(formData.price),
-            category: formData.category,
-            stock: parseInt(formData.stock || '0')
-        };
-
-        console.log('Submitting product data:', productData);
-
-        try {
-            if (selectedProduct) {
-                console.log('Updating product:', selectedProduct._id, productData);
-                await dispatch(updateProduct({ 
-                    id: selectedProduct._id, 
-                    productData 
-                })).unwrap();
-                console.log('Product updated successfully');
-            } else {
-                await dispatch(createProduct(productData)).unwrap();
-                console.log('Product created successfully');
-            }
-            handleCloseDialog();
-            loadProducts();
-        } catch (error) {
-            console.error('Error saving product:', error);
-            alert(error.message || 'Error saving product');
-        }
-    };
-
-    const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to delete this product?')) {
-            await dispatch(deleteProduct(id));
-            loadProducts();
-        }
-    };
-
-    const handleChangePage = (event, newPage) => {
-        setPage(newPage);
-    };
-
-    const handleChangeRowsPerPage = (event) => {
-        setRowsPerPage(parseInt(event.target.value, 10));
-        setPage(0);
-    };
-
-    const handleSearchChange = (e) => {
-        setSearchQuery(e.target.value);
-        setPage(0);
-    };
-
-    const handleFilterChange = (name, value) => {
         setFilters(prev => ({
             ...prev,
             [name]: value
         }));
-        setPage(0);
     };
 
-    const handleProductClick = (product) => {
-        navigate(`/products/${product._id}`);
+    const handleDeleteProduct = async (id) => {
+        if (window.confirm('Are you sure you want to delete this product?')) {
+            try {
+                await productAPI.deleteProduct(id);
+                fetchData();
+            } catch (err) {
+                setError('Failed to delete product');
+                console.error('Error deleting product:', err);
+            }
+        }
     };
 
-    if (error) {
-        setTimeout(() => {
-            dispatch(clearError());
-        }, 5000);
+    if (loading) {
+        return (
+            <DashboardLayout>
+                <div className="flex justify-center items-center min-h-screen">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                </div>
+            </DashboardLayout>
+        );
     }
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                <Typography variant="h4" component="h1">Products</Typography>
-                {(user?.role === 'admin' || user?.role === 'seller') && (
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={() => handleOpenDialog()}
-                    >
-                        Add Product
-                    </Button>
-                )}
-            </Box>
+        <DashboardLayout>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                {/* Header */}
+                <div className="mb-8">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900">Products</h1>
+                            <p className="mt-2 text-sm text-gray-600">
+                                Manage your product catalog
+                            </p>
+                        </div>
+                        <Link
+                            to="/products/add"
+                            className="inline-flex items-center px-4 py-2 border border-transparent 
+                                     rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 
+                                     hover:bg-primary-700 focus:outline-none focus:ring-2 
+                                     focus:ring-offset-2 focus:ring-primary-500"
+                        >
+                            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                            </svg>
+                            Add Product
+                        </Link>
+                    </div>
 
-            {/* Filters */}
-            <Paper sx={{ p: 2, mb: 3 }}>
-                <Grid container spacing={2} alignItems="center">
-                    <Grid item xs={12} sm={3}>
-                        <TextField
-                            fullWidth
-                            label="Search"
-                            value={searchQuery}
-                            onChange={handleSearchChange}
-                            InputProps={{
-                                endAdornment: <SearchIcon />
-                            }}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={3}>
-                        <FormControl fullWidth>
-                            <InputLabel>Category</InputLabel>
-                            <Select
+                    {/* Filters */}
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Search</label>
+                            <input
+                                type="text"
+                                name="search"
+                                value={filters.search}
+                                onChange={handleFilterChange}
+                                placeholder="Search products..."
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                         focus:border-primary-500 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Category</label>
+                            <select
+                                name="category"
                                 value={filters.category}
-                                onChange={(e) => handleFilterChange('category', e.target.value)}
-                                label="Category"
+                                onChange={handleFilterChange}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                         focus:border-primary-500 focus:ring-primary-500"
                             >
-                                <MenuItem value="">All Categories</MenuItem>
-                                {(categories || []).map((category) => (
-                                    <MenuItem key={category._id} value={category._id}>
+                                <option value="">All Categories</option>
+                                {categories.map(category => (
+                                    <option key={category._id} value={category._id}>
                                         {category.name}
-                                    </MenuItem>
+                                    </option>
                                 ))}
-                            </Select>
-                        </FormControl>
-                    </Grid>
-                    <Grid item xs={12} sm={2}>
-                        <TextField
-                            fullWidth
-                            label="Min Price"
-                            type="number"
-                            value={filters.minPrice}
-                            onChange={(e) => handleFilterChange('minPrice', e.target.value)}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={2}>
-                        <TextField
-                            fullWidth
-                            label="Max Price"
-                            type="number"
-                            value={filters.maxPrice}
-                            onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
-                        />
-                    </Grid>
-                    <Grid item xs={12} sm={2}>
-                        <FormControl fullWidth>
-                            <InputLabel>Stock Status</InputLabel>
-                            <Select
-                                value={filters.inStock}
-                                onChange={(e) => handleFilterChange('inStock', e.target.value)}
-                                label="Stock Status"
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Status</label>
+                            <select
+                                name="status"
+                                value={filters.status}
+                                onChange={handleFilterChange}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                         focus:border-primary-500 focus:ring-primary-500"
                             >
-                                <MenuItem value="">All</MenuItem>
-                                <MenuItem value="true">In Stock</MenuItem>
-                                <MenuItem value="false">Out of Stock</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </Grid>
-                </Grid>
-            </Paper>
+                                <option value="">All Status</option>
+                                <option value="active">Active</option>
+                                <option value="draft">Draft</option>
+                                <option value="archived">Archived</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Sort By</label>
+                            <select
+                                name="sort"
+                                value={filters.sort}
+                                onChange={handleFilterChange}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                         focus:border-primary-500 focus:ring-primary-500"
+                            >
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="price-asc">Price: Low to High</option>
+                                <option value="price-desc">Price: High to Low</option>
+                                <option value="name-asc">Name: A to Z</option>
+                                <option value="name-desc">Name: Z to A</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-            {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    {error}
-                </Alert>
-            )}
+                {error && (
+                    <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
+                        <p className="font-medium">Error</p>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                )}
 
-            {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                    <CircularProgress />
-                </Box>
-            ) : (
-                <>
-                    <TableContainer component={Paper}>
-                        <Table>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell>Name</TableCell>
-                                    <TableCell>Category</TableCell>
-                                    <TableCell align="right">Price</TableCell>
-                                    <TableCell align="right">Stock</TableCell>
-                                    <TableCell align="center">Actions</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {products.map((product) => (
-                                    <TableRow
-                                        key={product._id}
-                                        hover
-                                        onClick={() => handleProductClick(product)}
-                                        sx={{ cursor: 'pointer' }}
+                {/* Products Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {products.map(product => (
+                        <div
+                            key={product._id}
+                            className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg 
+                                     transition-shadow duration-200"
+                        >
+                            <div className="aspect-w-16 aspect-h-9">
+                                {product.image ? (
+                                    <img
+                                        src={product.image}
+                                        alt={product.name}
+                                        className="w-full h-48 object-cover"
+                                    />
+                                ) : (
+                                    <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                                        <span className="text-gray-400">No image</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-4">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-900 truncate">
+                                            {product.name}
+                                        </h3>
+                                        <p className="mt-1 text-sm text-gray-500 line-clamp-2">
+                                            {product.description}
+                                        </p>
+                                    </div>
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        {product.status}
+                                    </span>
+                                </div>
+                                <div className="mt-4 flex items-center justify-between">
+                                    <span className="text-lg font-bold text-gray-900">
+                                        ${product.price}
+                                    </span>
+                                    <span className="text-sm text-gray-500">
+                                        Stock: {product.stock}
+                                    </span>
+                                </div>
+                                <div className="mt-4 flex justify-between items-center">
+                                    <button
+                                        onClick={() => navigate(`/products/edit/${product._id}`)}
+                                        className="text-primary-600 hover:text-primary-700 text-sm font-medium"
                                     >
-                                        <TableCell>{product.name}</TableCell>
-                                        <TableCell>{product.category?.name}</TableCell>
-                                        <TableCell align="right">${product.price}</TableCell>
-                                        <TableCell align="right">{product.stock}</TableCell>
-                                        <TableCell align="center">
-                                            <IconButton
-                                                color="primary"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleOpenDialog(product);
-                                                }}
-                                            >
-                                                <EditIcon />
-                                            </IconButton>
-                                            {(user?.role === 'admin' || user?.role === 'seller') && (
-                                                <IconButton
-                                                    color="error"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDelete(product._id);
-                                                    }}
-                                                >
-                                                    <DeleteIcon />
-                                                </IconButton>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                    <TablePagination
-                        rowsPerPageOptions={[5, 10, 25]}
-                        component="div"
-                        count={products.length}
-                        rowsPerPage={rowsPerPage}
-                        page={page}
-                        onPageChange={handleChangePage}
-                        onRowsPerPageChange={handleChangeRowsPerPage}
-                    />
-                </>
-            )}
+                                        Edit
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteProduct(product._id)}
+                                        className="text-red-600 hover:text-red-700 text-sm font-medium"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
 
-            <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-                <form onSubmit={handleSubmit}>
-                    <DialogTitle>
-                        {selectedProduct ? 'Edit Product' : 'Add Product'}
-                    </DialogTitle>
-                    <DialogContent>
-                        <Box sx={{ mt: 2 }}>
-                            <Grid container spacing={2}>
-                                <Grid item xs={12}>
-                                    <TextField
-                                        required
-                                        fullWidth
-                                        label="Name"
-                                        name="name"
-                                        value={formData.name}
-                                        onChange={handleInputChange}
+                {/* Empty State */}
+                {products.length === 0 && !loading && (
+                    <div className="text-center py-12">
+                        <svg
+                            className="mx-auto h-12 w-12 text-gray-400"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            aria-hidden="true"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
+                            />
+                        </svg>
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">No products</h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Get started by creating a new product.
+                        </p>
+                        <div className="mt-6">
+                            <Link
+                                to="/products/add"
+                                className="inline-flex items-center px-4 py-2 border border-transparent 
+                                         rounded-md shadow-sm text-sm font-medium text-white 
+                                         bg-primary-600 hover:bg-primary-700 focus:outline-none 
+                                         focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                            >
+                                <svg
+                                    className="-ml-1 mr-2 h-5 w-5"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                                        clipRule="evenodd"
                                     />
-                                </Grid>
-                                <Grid item xs={12}>
-                                    <TextField
-                                        fullWidth
-                                        label="Description"
-                                        name="description"
-                                        value={formData.description}
-                                        onChange={handleInputChange}
-                                        multiline
-                                        rows={4}
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        required
-                                        fullWidth
-                                        label="Price"
-                                        name="price"
-                                        type="number"
-                                        value={formData.price}
-                                        onChange={handleInputChange}
-                                    />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField
-                                        fullWidth
-                                        label="Stock"
-                                        name="stock"
-                                        type="number"
-                                        value={formData.stock}
-                                        onChange={handleInputChange}
-                                    />
-                                </Grid>
-                                <Grid item xs={12}>
-                                    <FormControl fullWidth required>
-                                        <InputLabel>Category</InputLabel>
-                                        <Select
-                                            name="category"
-                                            value={formData.category}
-                                            onChange={handleInputChange}
-                                            label="Category"
-                                        >
-                                            <MenuItem value="">Select Category</MenuItem>
-                                            {categories && categories.length > 0 && categories.map((category) => (
-                                                <MenuItem key={category._id} value={category._id}>
-                                                    {category.name}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                </Grid>
-                            </Grid>
-                        </Box>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={handleCloseDialog}>Cancel</Button>
-                        <Button type="submit" variant="contained">
-                            {selectedProduct ? 'Update' : 'Add'}
-                        </Button>
-                    </DialogActions>
-                </form>
-            </Dialog>
-        </Container>
+                                </svg>
+                                Add Product
+                            </Link>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </DashboardLayout>
     );
 };
 

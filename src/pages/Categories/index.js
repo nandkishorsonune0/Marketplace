@@ -1,348 +1,383 @@
 import React, { useState, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import {
-    Box,
-    Container,
-    Paper,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    TablePagination,
-    Button,
-    IconButton,
-    Typography,
-    TextField,
-    Alert,
-    CircularProgress,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Grid,
-    FormControl,
-    InputLabel,
-    Select,
-    MenuItem
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import SearchIcon from '@mui/icons-material/Search';
-import {
-    fetchCategories,
-    createCategory,
-    updateCategory,
-    deleteCategory,
-    clearError
-} from '../../features/categories/categorySlice';
+import { useNavigate } from 'react-router-dom';
+import { categoryAPI } from '../../services/api';
+import DashboardLayout from '../../components/DashboardLayout';
 
 const Categories = () => {
-    const dispatch = useDispatch();
-    const { items: categories, loading, error, pagination } = useSelector(state => {
-        console.log('Current categories state:', state.categories);
-        return state.categories;
-    });
-
-    const [searchQuery, setSearchQuery] = useState('');
-    const [page, setPage] = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
-    const [openDialog, setOpenDialog] = useState(false);
-    const [selectedCategory, setSelectedCategory] = useState(null);
-    const [formData, setFormData] = useState({
-        name: '',
+    const navigate = useNavigate();
+    const [categories, setCategories] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [newCategory, setNewCategory] = useState({ 
+        name: '', 
         description: '',
         status: 'active',
         visibility: 'public'
     });
+    const [filters, setFilters] = useState({
+        search: '',
+        status: '',
+        visibility: ''
+    });
 
-    const loadCategories = async () => {
+    useEffect(() => {
+        fetchCategories();
+    }, [filters]);
+
+    const fetchCategories = async () => {
         try {
-            console.log('Loading categories with params:', {
-                page: page + 1,
-                limit: rowsPerPage,
-                search: searchQuery
-            });
-            
-            const result = await dispatch(fetchCategories({
-                page: page + 1,
-                limit: rowsPerPage,
-                search: searchQuery
-            })).unwrap();
-            
-            console.log('Categories loaded:', result);
-        } catch (error) {
-            console.error('Failed to load categories:', error);
+            setLoading(true);
+            setError(null);
+            const response = await categoryAPI.getCategories(filters);
+            const categoriesData = response.data?.data || response.data || [];
+            setCategories(Array.isArray(categoriesData) ? categoriesData : []);
+            console.log('Categories:', categoriesData);
+        } catch (err) {
+            console.error('Error fetching categories:', err);
+            setError(err.response?.data?.message || 'Failed to load categories');
+            setCategories([]);
+        } finally {
+            setLoading(false);
         }
     };
 
-    useEffect(() => {
-        loadCategories();
-    }, [page, rowsPerPage, searchQuery]);
-
-    const handleChangePage = (event, newPage) => {
-        setPage(newPage);
-    };
-
-    const handleChangeRowsPerPage = (event) => {
-        setRowsPerPage(parseInt(event.target.value, 10));
-        setPage(0);
-    };
-
-    const handleOpenDialog = (category = null) => {
-        if (category) {
-            setSelectedCategory(category);
-            setFormData({
-                name: category.name || '',
-                description: category.description || '',
-                status: category.status || 'active',
-                visibility: category.visibility || 'public'
-            });
-        } else {
-            setSelectedCategory(null);
-            setFormData({
-                name: '',
+    const handleAddCategory = async (e) => {
+        e.preventDefault();
+        try {
+            setLoading(true);
+            await categoryAPI.createCategory(newCategory);
+            setShowAddModal(false);
+            setNewCategory({ 
+                name: '', 
                 description: '',
                 status: 'active',
                 visibility: 'public'
             });
-        }
-        setOpenDialog(true);
-    };
-
-    const handleCloseDialog = () => {
-        setOpenDialog(false);
-        setSelectedCategory(null);
-        setFormData({
-            name: '',
-            description: '',
-            status: 'active',
-            visibility: 'public'
-        });
-    };
-
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!formData.name.trim()) {
-            return;
-        }
-
-        try {
-            if (selectedCategory) {
-                console.log('Updating category:', {
-                    id: selectedCategory._id,
-                    data: formData
-                });
-                await dispatch(updateCategory({
-                    id: selectedCategory._id,
-                    categoryData: formData
-                })).unwrap();
-            } else {
-                await dispatch(createCategory(formData)).unwrap();
-            }
-            handleCloseDialog();
-            loadCategories(); // Refresh the list
+            await fetchCategories();
         } catch (err) {
-            console.error('Category operation failed:', err);
+            setError('Failed to create category');
+            console.error('Error creating category:', err);
+        } finally {
+            setLoading(false);
         }
     };
 
     const handleDeleteCategory = async (id) => {
         if (window.confirm('Are you sure you want to delete this category?')) {
             try {
-                await dispatch(deleteCategory(id)).unwrap();
-                loadCategories(); // Refresh the list
+                await categoryAPI.deleteCategory(id);
+                fetchCategories();
             } catch (err) {
-                console.error('Delete failed:', err);
+                setError('Failed to delete category');
+                console.error('Error deleting category:', err);
             }
         }
     };
 
-    if (loading && !categories?.length) {
+    const handleFilterChange = (e) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
+
+    if (loading) {
         return (
-            <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-                <CircularProgress />
-            </Box>
+            <DashboardLayout>
+                <div className="flex justify-center items-center min-h-screen">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                </div>
+            </DashboardLayout>
         );
     }
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                <Typography variant="h4" component="h1">
-                    Categories
-                </Typography>
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpenDialog()}
-                >
-                    Add Category
-                </Button>
-            </Box>
+        <DashboardLayout>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                {/* Header */}
+                <div className="mb-8">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900">Categories</h1>
+                            <p className="mt-2 text-gray-600">
+                                Manage your product categories
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="inline-flex items-center px-4 py-2 border border-transparent 
+                                     rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 
+                                     hover:bg-primary-700 focus:outline-none focus:ring-2 
+                                     focus:ring-offset-2 focus:ring-primary-500"
+                        >
+                            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                            </svg>
+                            Add Category
+                        </button>
+                    </div>
 
-            {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    {error}
-                </Alert>
-            )}
+                    {/* Filters */}
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Search</label>
+                            <input
+                                type="text"
+                                name="search"
+                                value={filters.search}
+                                onChange={handleFilterChange}
+                                placeholder="Search categories..."
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                         focus:border-primary-500 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Status</label>
+                            <select
+                                name="status"
+                                value={filters.status}
+                                onChange={handleFilterChange}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                         focus:border-primary-500 focus:ring-primary-500"
+                            >
+                                <option value="">All Status</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Visibility</label>
+                            <select
+                                name="visibility"
+                                value={filters.visibility}
+                                onChange={handleFilterChange}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                         focus:border-primary-500 focus:ring-primary-500"
+                            >
+                                <option value="">All Visibility</option>
+                                <option value="public">Public</option>
+                                <option value="private">Private</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-            <Paper sx={{ width: '100%', mb: 2 }}>
-                <Box sx={{ p: 2 }}>
-                    <TextField
-                        fullWidth
-                        variant="outlined"
-                        placeholder="Search categories..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        InputProps={{
-                            startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                        }}
-                    />
-                </Box>
+                {error && (
+                    <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
+                        <p className="font-medium">Error</p>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                )}
 
-                <TableContainer>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Name</TableCell>
-                                <TableCell>Description</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell>Visibility</TableCell>
-                                <TableCell align="right">Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {loading ? (
-                                <TableRow>
-                                    <TableCell colSpan={5} align="center">
-                                        <CircularProgress size={24} />
-                                    </TableCell>
-                                </TableRow>
-                            ) : categories && categories.length > 0 ? (
-                                categories.map((category) => (
-                                    <TableRow key={category?._id || 'unknown'}>
-                                        <TableCell>{category?.name || 'No Name'}</TableCell>
-                                        <TableCell>{category?.description || 'No Description'}</TableCell>
-                                        <TableCell>{category?.status || 'active'}</TableCell>
-                                        <TableCell>{category?.visibility || 'public'}</TableCell>
-                                        <TableCell align="right">
-                                            <IconButton
-                                                color="primary"
-                                                onClick={() => handleOpenDialog(category)}
-                                            >
-                                                <EditIcon />
-                                            </IconButton>
-                                            <IconButton
-                                                color="error"
-                                                onClick={() => handleDeleteCategory(category._id)}
-                                            >
-                                                <DeleteIcon />
-                                            </IconButton>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={5} align="center">
-                                        No categories found
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-
-                <TablePagination
-                    rowsPerPageOptions={[5, 10, 25]}
-                    component="div"
-                    count={pagination?.total || 0}
-                    rowsPerPage={rowsPerPage}
-                    page={page}
-                    onPageChange={handleChangePage}
-                    onRowsPerPageChange={handleChangeRowsPerPage}
-                />
-            </Paper>
-
-            {/* Category Dialog */}
-            <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    {selectedCategory ? 'Edit Category' : 'Add Category'}
-                </DialogTitle>
-                <DialogContent>
-                    <Box sx={{ mt: 2 }}>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="Name"
-                                    name="name"
-                                    value={formData.name}
-                                    onChange={handleInputChange}
-                                    required
-                                />
-                            </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="Description"
-                                    name="description"
-                                    value={formData.description}
-                                    onChange={handleInputChange}
-                                    multiline
-                                    rows={3}
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Status</InputLabel>
-                                    <Select
-                                        name="status"
-                                        value={formData.status}
-                                        onChange={handleInputChange}
-                                        label="Status"
+                {/* Categories Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {categories.map(category => (
+                        <div
+                            key={category._id}
+                            className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg 
+                                     transition-shadow duration-200"
+                        >
+                            <div className="p-6">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-900">
+                                            {category.name}
+                                        </h3>
+                                        <p className="mt-2 text-gray-600 text-sm">
+                                            {category.description || 'No description'}
+                                        </p>
+                                    </div>
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                        ${category.status === 'active' 
+                                            ? 'bg-green-100 text-green-800' 
+                                            : 'bg-gray-100 text-gray-800'}`}
                                     >
-                                        <MenuItem value="active">Active</MenuItem>
-                                        <MenuItem value="inactive">Inactive</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Visibility</InputLabel>
-                                    <Select
-                                        name="visibility"
-                                        value={formData.visibility}
-                                        onChange={handleInputChange}
-                                        label="Visibility"
+                                        {category.status}
+                                    </span>
+                                </div>
+                                <div className="mt-4 flex justify-between items-center text-sm text-gray-500">
+                                    <div className="flex items-center">
+                                        <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                        </svg>
+                                        {category.products?.length || 0} products
+                                    </div>
+                                    <span>
+                                        {new Date(category.createdAt).toLocaleDateString()}
+                                    </span>
+                                </div>
+                                <div className="mt-4 flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => navigate(`/categories/${category._id}`)}
+                                        className="text-primary-600 hover:text-primary-700 text-sm font-medium"
                                     >
-                                        <MenuItem value="public">Public</MenuItem>
-                                        <MenuItem value="private">Private</MenuItem>
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                        </Grid>
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleCloseDialog}>Cancel</Button>
-                    <Button onClick={handleSubmit} variant="contained" color="primary">
-                        {selectedCategory ? 'Update' : 'Create'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-        </Container>
+                                        Edit
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteCategory(category._id)}
+                                        className="text-red-600 hover:text-red-700 text-sm font-medium"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Empty State */}
+                {categories.length === 0 && !loading && (
+                    <div className="text-center py-12">
+                        <svg
+                            className="mx-auto h-12 w-12 text-gray-400"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            aria-hidden="true"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 6h16M4 12h16M4 18h7"
+                            />
+                        </svg>
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">No categories</h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Get started by creating a new category.
+                        </p>
+                        <div className="mt-6">
+                            <button
+                                onClick={() => setShowAddModal(true)}
+                                className="inline-flex items-center px-4 py-2 border border-transparent 
+                                         rounded-md shadow-sm text-sm font-medium text-white 
+                                         bg-primary-600 hover:bg-primary-700 focus:outline-none 
+                                         focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                            >
+                                <svg
+                                    className="-ml-1 mr-2 h-5 w-5"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                                        clipRule="evenodd"
+                                    />
+                                </svg>
+                                Add Category
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Add Category Modal */}
+                {showAddModal && (
+                    <div className="fixed inset-0 z-50 overflow-y-auto">
+                        <div className="flex items-center justify-center min-h-screen px-4">
+                            <div className="fixed inset-0 bg-black opacity-30"></div>
+                            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full">
+                                <form onSubmit={handleAddCategory} className="p-6">
+                                    <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                                        Add New Category
+                                    </h2>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Name
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={newCategory.name}
+                                                onChange={(e) => setNewCategory({
+                                                    ...newCategory,
+                                                    name: e.target.value
+                                                })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                                         focus:border-primary-500 focus:ring-primary-500"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Description
+                                            </label>
+                                            <textarea
+                                                value={newCategory.description}
+                                                onChange={(e) => setNewCategory({
+                                                    ...newCategory,
+                                                    description: e.target.value
+                                                })}
+                                                rows={3}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                                         focus:border-primary-500 focus:ring-primary-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Status
+                                            </label>
+                                            <select
+                                                value={newCategory.status}
+                                                onChange={(e) => setNewCategory({
+                                                    ...newCategory,
+                                                    status: e.target.value
+                                                })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                                         focus:border-primary-500 focus:ring-primary-500"
+                                            >
+                                                <option value="active">Active</option>
+                                                <option value="inactive">Inactive</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Visibility
+                                            </label>
+                                            <select
+                                                value={newCategory.visibility}
+                                                onChange={(e) => setNewCategory({
+                                                    ...newCategory,
+                                                    visibility: e.target.value
+                                                })}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm 
+                                                         focus:border-primary-500 focus:ring-primary-500"
+                                            >
+                                                <option value="public">Public</option>
+                                                <option value="private">Private</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 flex justify-end space-x-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowAddModal(false)}
+                                            className="px-4 py-2 text-sm font-medium text-gray-700 
+                                                     hover:text-gray-900"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-4 py-2 border border-transparent rounded-md shadow-sm 
+                                                     text-sm font-medium text-white bg-primary-600 
+                                                     hover:bg-primary-700 focus:outline-none focus:ring-2 
+                                                     focus:ring-offset-2 focus:ring-primary-500"
+                                        >
+                                            Add Category
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </DashboardLayout>
     );
 };
 

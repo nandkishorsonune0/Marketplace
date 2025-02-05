@@ -31,9 +31,16 @@ export const store = configureStore({
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
-        ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE']
+        // Ignore these action types
+        ignoredActions: ['persist/PERSIST'],
+        // Ignore these field paths in all actions
+        ignoredActionPaths: ['payload.timestamp'],
+        // Ignore these paths in the state
+        ignoredPaths: ['items.dates'],
       }
     })
 });
 
 export const persistor = persistStore(store);
+
+export default store;

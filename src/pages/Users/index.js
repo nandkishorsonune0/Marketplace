@@ -4,8 +4,8 @@ import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 const sampleUsers = [
     {
         id: 1,
-        name: 'John Doe',
-        email: 'john@example.com',
+        name: 'Nandkishor Sonune',
+        email: 'nandkishorsonune0@example.com',
         role: 'admin',
         status: 'active',
         lastLogin: '2025-02-03'
