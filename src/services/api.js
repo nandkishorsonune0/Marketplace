@@ -64,17 +64,37 @@ export const productAPI = {
     deleteProduct: (id) => api.delete(`/products/${id}`),
     getProductsByCategory: (categoryId, params) => api.get(`/products/category/${categoryId}`, { params }),
     uploadImage: (formData) => api.post('/products/upload-image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 
+            'Content-Type': 'multipart/form-data'
+        }
     }),
 };
 
 // Category API
 export const categoryAPI = {
-    getCategories: (params) => api.get('/categories', { params }),
+    getCategories: (params) => api.get('/categories', { 
+        params,
+        validateStatus: function (status) {
+            return status >= 200 && status < 300;
+        },
+        transformResponse: [(data) => {
+            try {
+                const parsedData = JSON.parse(data);
+                // Handle different response formats
+                if (parsedData.categories) return parsedData.categories;
+                if (Array.isArray(parsedData)) return parsedData;
+                if (parsedData.data) return parsedData.data;
+                return [];
+            } catch (error) {
+                console.error('Error parsing categories response:', error);
+                return [];
+            }
+        }]
+    }),
     getCategory: (id) => api.get(`/categories/${id}`),
     createCategory: (data) => api.post('/categories', data),
     updateCategory: (id, data) => api.put(`/categories/${id}`, data),
-    deleteCategory: (id) => api.delete(`/categories/${id}`),
+    deleteCategory: (id) => api.delete(`/categories/${id}`)
 };
 
 // Order API

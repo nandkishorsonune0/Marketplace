@@ -46,16 +46,27 @@ const ImageUpload = ({ onImageUpload, initialImage }) => {
             formData.append('image', selectedFile);
 
             const response = await productAPI.uploadImage(formData);
+            console.log('Upload response:', response);
             
-            if (response.data?.imageUrl) {
-                onImageUpload(response.data.imageUrl);
+            // The backend sends response in ApiResponse format
+            // data property contains the actual response data
+            const imageUrl = response.data?.data?.imageUrl;
+            
+            if (imageUrl) {
+                onImageUpload(imageUrl);
                 setSelectedFile(null);
+                setError(null);
             } else {
-                throw new Error('Invalid response from server');
+                console.error('Invalid response structure:', response.data);
+                throw new Error('Could not get image URL from server response');
             }
         } catch (err) {
-            console.error('Upload error:', err);
-            setError(err.message || 'Error uploading image');
+            console.error('Upload error details:', err);
+            const errorMessage = err.response?.data?.message || err.message || 'Error uploading image';
+            setError(errorMessage);
+            // Clear the selected file on error
+            setSelectedFile(null);
+            setPreview(null);
         } finally {
             setLoading(false);
         }

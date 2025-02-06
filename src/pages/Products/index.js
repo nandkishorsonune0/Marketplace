@@ -20,24 +20,61 @@ const Products = () => {
         try {
             setLoading(true);
             setError(null);
+            console.log('Fetching products and categories...');
+            
+            // Prepare query parameters
+            const queryParams = {
+                ...filters,
+                page: 1,
+                limit: 50
+            };
+
             const [productsRes, categoriesRes] = await Promise.all([
-                productAPI.getProducts(filters),
+                productAPI.getProducts(queryParams),
                 categoryAPI.getCategories()
             ]);
             
+            console.log('Products response:', productsRes);
+            console.log('Categories response:', categoriesRes);
+
             // Handle products data
-            const productsData = productsRes.data?.data || productsRes.data || [];
-            setProducts(Array.isArray(productsData) ? productsData : []);
-
+            let productsData;
+            if (productsRes.data?.products) {
+                productsData = productsRes.data.products;
+            } else if (Array.isArray(productsRes.data)) {
+                productsData = productsRes.data;
+            } else if (productsRes.data?.data) {
+                productsData = productsRes.data.data;
+            } else {
+                productsData = [];
+            }
+            
             // Handle categories data
-            const categoriesData = categoriesRes.data?.data || categoriesRes.data || [];
-            setCategories(Array.isArray(categoriesData) ? categoriesData : []);
+            let categoriesData;
+            if (categoriesRes.data?.categories) {
+                categoriesData = categoriesRes.data.categories;
+            } else if (Array.isArray(categoriesRes.data)) {
+                categoriesData = categoriesRes.data;
+            } else if (categoriesRes.data?.data) {
+                categoriesData = categoriesRes.data.data;
+            } else {
+                categoriesData = [];
+            }
 
-            console.log('Products:', productsData);
-            console.log('Categories:', categoriesData);
+            // Ensure we have arrays and set the state
+            const validProducts = Array.isArray(productsData) ? productsData : [];
+            const validCategories = Array.isArray(categoriesData) ? categoriesData : [];
+
+            console.log('Processed products:', validProducts);
+            console.log('Processed categories:', validCategories);
+
+            setProducts(validProducts);
+            setCategories(validCategories);
+
         } catch (err) {
             console.error('Error fetching data:', err);
-            setError(err.response?.data?.message || 'Failed to load products');
+            const errorMessage = err.response?.data?.message || err.message || 'Failed to load data';
+            setError(errorMessage);
             setProducts([]);
             setCategories([]);
         } finally {

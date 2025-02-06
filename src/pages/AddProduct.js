@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { productsAPI } from '../services/api';
+import { productAPI } from '../services/api';
 import ProductForm from '../components/ProductForm';
 
 const AddProduct = () => {
@@ -12,13 +12,16 @@ const AddProduct = () => {
         setLoading(true);
         setError(null);
         try {
-            const response = await productsAPI.createProduct(productData);
+            console.log('Submitting product data:', productData);
+            const response = await productAPI.createProduct(productData);
+            console.log('Create product response:', response);
+            
             if (response.data) {
-                // Redirect to product list or product detail page
                 navigate('/products');
             }
         } catch (err) {
-            setError(err.message || 'Failed to create product');
+            console.error('Error creating product:', err);
+            setError(err.response?.data?.message || err.message || 'Failed to create product');
         } finally {
             setLoading(false);
         }

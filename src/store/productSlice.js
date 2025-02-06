@@ -1,4 +1,3 @@
-// ...existing code...
 
 export const createProduct = createAsyncThunk(
   'products/create',
@@ -18,4 +17,4 @@ export const createProduct = createAsyncThunk(
   }
 );
 
-// ...existing code...
+
